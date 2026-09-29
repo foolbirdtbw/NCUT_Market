@@ -13,6 +13,35 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The frontend lives at the repository root, outside this project, so the Web SDK's wwwroot
+      convention does not see it and nothing would copy it into a publish output. These items are
+      what put it there, as web/ in the output — which is the third candidate StaticWebRoot tries.
+
+      This is only needed for publish. Under `dotnet run` the content root is the project directory
+      and StaticWebRoot's second candidate (`../../web`) resolves the same files straight from the
+      source tree, so CopyToOutputDirectory is deliberately not set: copying them into bin/ as well
+      would just be a second, staler copy that nothing reads.
+
+      None rather than Content. Content is the static-web-assets pipeline's item type, and these
+      files are served by an explicit PhysicalFileProvider rather than by the wwwroot conventions
+      that pipeline implements. None means "copy this file and otherwise leave it alone", which is
+      exactly the requirement.
+
+      RecursiveDir keeps the directory shape, so web/css/site.css publishes as web/css/site.css
+      rather than being flattened into one directory — which would break every relative URL in
+      index.html. PreserveNewest keeps an incremental publish from rewriting all of it every time.
+
+      The consequence to remember: a file added under web/ is picked up here automatically, but a
+      file added *outside* these globs works in development and 404s in production. That is what the
+      dotnet publish step in the verification checklist exists to catch.
+    -->
+    <None Include="..\..\web\**\*"
+          Link="web\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NCUT_Market.Core\NCUT_Market.Core.csproj" />
     <ProjectReference Include="..\NCUT_Market.Infrastructure\NCUT_Market.Infrastructure.csproj" />
   </ItemGroup>

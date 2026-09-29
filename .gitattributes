@@ -1,0 +1,10 @@
+# Vendored third-party files are stored byte-for-byte as upstream ships them.
+#
+# This matters because web/vendor/jquery-3.7.1.min.js is verified by SHA-256, both in web/README.md and
+# by the check that hashes the bytes the server actually hands out. core.autocrlf is true on the
+# development machine, so without this rule git would rewrite the file's LF endings to CRLF on the
+# next checkout — changing its length and its hash, and failing an integrity check on a file that
+# nobody edited. The check would then look like a supply-chain problem rather than a line-ending one.
+#
+# -text disables all line-ending conversion for these paths.
+web/vendor/** -text

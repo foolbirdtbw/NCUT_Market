@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NCUT Market · 北方工业大学校园二手交易平台</title>
+  <meta name="description" content="北方工业大学校园二手交易平台">
+
+  <!-- The ?v= cache string is maintained by hand. UseStaticFiles already sends ETag and
+       Last-Modified, so this is belt-and-braces rather than the primary cache mechanism — same
+       trade-off EasyERP makes. Bump it when a file changes and the browser will not let go of it. -->
+  <link rel="stylesheet" href="css/site.css?v=20260929.1">
+
+  <!-- Applies the stored theme before the first paint. Deliberately inline and deliberately before
+       the stylesheet-independent body: moving this into app.js means the page paints in light mode
+       and then flips to dark once the script runs, which is a visible flash on every navigation.
+       localStorage access is wrapped because it throws outright in some privacy configurations, and
+       a theme preference is never worth breaking the page over. -->
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("ncut-market.theme");
+        if (stored === "dark" || stored === "light") {
+          document.documentElement.setAttribute("data-theme", stored);
+        }
+      } catch (e) {
+        /* No storage available — fall through to the system preference via CSS. */
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <!-- Icon sprite. Symbols rather than image files: the repository ships zero binary images, and an
+       inline sprite costs one HTTP request less than a set of SVGs would. The cost is that
+       /favicon.ico 404s — see web/README.md, known limitations. -->
+  <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-home" viewBox="0 0 24 24">
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5.5 9.5V20h13V9.5" />
+    </symbol>
+    <symbol id="i-tree" viewBox="0 0 24 24">
+      <rect x="9" y="2.5" width="6" height="5" rx="1" />
+      <rect x="2.5" y="16.5" width="6" height="5" rx="1" />
+      <rect x="15.5" y="16.5" width="6" height="5" rx="1" />
+      <path d="M12 7.5v4M5.5 16.5v-2.5h13v2.5" />
+    </symbol>
+    <symbol id="i-building" viewBox="0 0 24 24">
+      <path d="M4 21V5.5A1.5 1.5 0 0 1 5.5 4h7A1.5 1.5 0 0 1 14 5.5V21" />
+      <path d="M14 10h4.5A1.5 1.5 0 0 1 20 11.5V21M2.5 21h19" />
+      <path d="M7 8h4M7 12h4M7 16h4M17 14h.01M17 18h.01" />
+    </symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24">
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24">
+      <path d="M12 3.5 21 19.5H3z" />
+      <path d="M12 9.5v4.5M12 17h.01" />
+    </symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24">
+      <path d="M20 11a8 8 0 0 0-13.7-5.3L3 9" />
+      <path d="M3 4v5h5" />
+      <path d="M4 13a8 8 0 0 0 13.7 5.3L21 15" />
+      <path d="M21 20v-5h-5" />
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m15.5 15.5 5 5" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <path d="m4.5 12.5 5 5 10-11" />
+    </symbol>
+  </svg>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#/">
+        <svg class="icon brand-mark" aria-hidden="true"><use href="#i-home"></use></svg>
+        <span class="brand-text">
+          <strong>NCUT Market</strong>
+          <small>北方工业大学校园二手交易平台</small>
+        </span>
+      </a>
+
+      <nav class="site-nav" id="site-nav" aria-label="主导航">
+        <a href="#/" data-nav="home">
+          <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>
+          <span>首页</span>
+        </a>
+        <a href="#/categories" data-nav="categories">
+          <svg class="icon" aria-hidden="true"><use href="#i-tree"></use></svg>
+          <span>分类字典</span>
+        </a>
+        <a href="#/dormitory-areas" data-nav="dormitory-areas">
+          <svg class="icon" aria-hidden="true"><use href="#i-building"></use></svg>
+          <span>宿舍区字典</span>
+        </a>
+      </nav>
+
+      <button type="button" class="icon-button" id="theme-toggle" aria-live="polite">
+        <svg class="icon" aria-hidden="true"><use id="theme-icon" href="#i-sun"></use></svg>
+        <span class="visually-hidden">切换主题</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="wrap" id="main" tabindex="-1">
+    <!-- Only one view container is un-hidden at a time; app.js drives that from the hash. Each view
+         owns its own error card and empty state, so a failed request never blanks the whole page. -->
+    <section class="view" id="view-home" hidden></section>
+    <section class="view" id="view-categories" hidden></section>
+    <section class="view" id="view-dormitory-areas" hidden></section>
+
+    <section class="view" id="view-missing" hidden>
+      <div class="card state-card">
+        <svg class="icon state-icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+        <h1>页面不存在</h1>
+        <p class="muted">地址 <code id="missing-hash"></code> 没有对应的页面。</p>
+        <a class="button" href="#/">回到首页</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p class="muted">
+        NCUT Market · 数据为开发环境示例数据 ·
+        <a href="/scalar" target="_blank" rel="noopener">接口文档</a>
+      </p>
+    </div>
+  </footer>
+
+  <!-- Toast host. aria-live is on the container, not on a toast element: a live region has to exist in
+       the accessibility tree before its content changes, or the first message is never announced. -->
+  <div class="toast-host" id="toast" role="status" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- Load order matters: api.js defines window.NcutApi and captures jQuery at parse time, app.js
+       consumes both. Both are classic scripts, not ES modules — an unmapped extension makes
+       StaticFileMiddleware fall through to a silent 404, and .mjs is not in
+       FileExtensionContentTypeProvider's map. -->
+  <script src="vendor/jquery-3.7.1.min.js"></script>
+  <script src="js/api.js?v=20260929.1"></script>
+  <script src="js/app.js?v=20260929.1"></script>
+</body>
+
+</html>

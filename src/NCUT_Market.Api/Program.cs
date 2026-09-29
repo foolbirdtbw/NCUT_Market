@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using NCUT_Market.Api.Configuration;
 using NCUT_Market.Api.Errors;
 using NCUT_Market.Core.Common;
@@ -91,6 +92,37 @@ var app = builder.Build();
 // the developer exception page, but this handler sits inside that and swallows the exception before
 // it can reach the page — which is what keeps the response a problem+json body with no stack trace.
 app.UseExceptionHandler();
+
+// The frontend is served from the repository-root web/ directory, which sits outside this project,
+// so the file provider is supplied explicitly instead of relying on the Web SDK's wwwroot
+// convention. StaticWebRoot logs which candidate directory it picked.
+//
+// WebApplicationOptions.WebRootPath is deliberately NOT set. It is not validated — the builder only
+// pushes the value into configuration, so a missing directory would not fail loudly there either.
+// The real reason to keep away from it is that StaticFileMiddleware's own "web root not found"
+// warning is gated on the provider being both NullFileProvider and the hosting environment's
+// WebRootFileProvider; supplying our own provider through the options below makes a missing
+// directory produce silent 404s instead. Going through StaticWebRoot keeps the warning path ours.
+var webRoot = StaticWebRoot.Resolve(app.Configuration, app.Environment, app.Logger);
+
+if (webRoot is not null)
+{
+    var fileProvider = new PhysicalFileProvider(webRoot);
+
+    // UseDefaultFiles must come before UseStaticFiles: it does not serve anything itself, it only
+    // rewrites "/" to "/index.html", and it is that rewritten path UseStaticFiles then serves.
+    // Reversed, GET / stays a 404.
+    //
+    // Both go after UseExceptionHandler so a failure while serving a file still produces the
+    // problem+json contract, and before MapControllers so they cannot shadow an endpoint. In
+    // practice they cannot: UseStaticFiles passes through to the next middleware whenever no file
+    // matches, and neither touches a path an endpoint has claimed.
+    //
+    // No MapFallbackToFile is needed. The UI routes on the fragment (#/categories), which the
+    // browser never sends to the server, so the only server-side path the UI needs is "/".
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+}
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
