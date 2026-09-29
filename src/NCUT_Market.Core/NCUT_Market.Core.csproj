@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Emit the XML documentation file so that Microsoft.AspNetCore.OpenApi's build targets can pick
+      it up as an AdditionalFile through the ProjectReference and show these summaries in Scalar.
+      Without it the DTO comments never reach the generated document.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      GenerateDocumentationFile turns on CS1591 (public member without an XML comment), and
+      Directory.Build.props sets TreatWarningsAsErrors. Around a hundred public members here — the
+      entity properties and enum values — still have no comments, so leaving CS1591 on would fail
+      every build. This is recoverable tech debt: delete the suppression once the public surface is
+      documented.
+    -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>
