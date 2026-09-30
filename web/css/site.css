@@ -1,99 +1,19 @@
-/* NCUT Market — frontend styles. Hand-written; no framework, no build step.
- *
- * Structure, in order: tokens, reset, layout, header, components, views, responsive.
- * Everything is one flat file on purpose — with no build step, splitting CSS only buys readability
- * that a single ~500-line file does not need yet.
- */
-
-/* ==========================================================================
-   Tokens
-   ========================================================================== */
+/* NCUT Market 样式。手写，无框架无构建。
+   令牌 → 重置 → 布局 → 组件 → 响应式。 */
 
 :root {
   --bg: #f5f6f8;
-  --surface: #ffffff;
+  --surface: #fff;
   --surface-alt: #f0f2f5;
   --border: #e0e4e9;
-  --border-strong: #c9cfd6;
-
   --text: #1b1f24;
-  --text-muted: #676f7a;
-  --text-inverse: #ffffff;
-
+  --muted: #676f7a;
   --accent: #2563eb;
-  --accent-hover: #1d4ed8;
   --accent-weak: #e8effd;
-  --accent-ring: rgba(37, 99, 235, 0.35);
-
   --danger: #c0392b;
   --danger-weak: #fdecea;
   --danger-border: #f3c2bb;
-
-  --warning: #8a5a00;
-  --warning-weak: #fdf5e3;
-  --warning-border: #efd9a3;
-
   --success: #1f7a4d;
-  --success-weak: #e7f5ee;
-
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow-md: 0 6px 18px rgba(16, 24, 40, 0.10);
-
-  --radius-sm: 4px;
-  --radius: 8px;
-  --radius-lg: 12px;
-
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-
-  --wrap: 1080px;
-  --font: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC",
-    "Hiragino Sans GB", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-}
-
-/* The dark palette is declared twice — once for the system preference, once for the explicit
- * attribute — because a media query cannot be merged into a selector list. Duplication is the price
- * of having both; the alternative (a class toggled by JS on every load) reintroduces exactly the
- * pre-paint flash the inline head script exists to avoid. The two blocks must be kept identical.
- *
- * :root:not([data-theme="light"]) is what makes an explicit light choice win over a dark system
- * preference. Without the :not(), a user who picked light on a dark-mode machine would get dark. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #14171a;
-    --surface: #1c2024;
-    --surface-alt: #23282e;
-    --border: #2e353d;
-    --border-strong: #3d454e;
-
-    --text: #e7eaee;
-    --text-muted: #98a1ac;
-    --text-inverse: #14171a;
-
-    --accent: #6ea8fe;
-    --accent-hover: #8dbcff;
-    --accent-weak: #1e2a3d;
-    --accent-ring: rgba(110, 168, 254, 0.4);
-
-    --danger: #f08e84;
-    --danger-weak: #34211f;
-    --danger-border: #5b3630;
-
-    --warning: #e8c37a;
-    --warning-weak: #332a17;
-    --warning-border: #57492a;
-
-    --success: #7cd0a4;
-    --success-weak: #17301f;
-
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
-  }
 }
 
 :root[data-theme="dark"] {
@@ -101,51 +21,19 @@
   --surface: #1c2024;
   --surface-alt: #23282e;
   --border: #2e353d;
-  --border-strong: #3d454e;
-
   --text: #e7eaee;
-  --text-muted: #98a1ac;
-  --text-inverse: #14171a;
-
+  --muted: #98a1ac;
   --accent: #6ea8fe;
-  --accent-hover: #8dbcff;
   --accent-weak: #1e2a3d;
-  --accent-ring: rgba(110, 168, 254, 0.4);
-
   --danger: #f08e84;
   --danger-weak: #34211f;
   --danger-border: #5b3630;
-
-  --warning: #e8c37a;
-  --warning-weak: #332a17;
-  --warning-border: #57492a;
-
   --success: #7cd0a4;
-  --success-weak: #17301f;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
 
-/* ==========================================================================
-   Reset
-   ========================================================================== */
+/* ---------- 重置 ---------- */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-/* [hidden] has to win over any display the components below set, and a class selector beats the
- * user-agent's [hidden] rule — this is the one place !important is the right tool. */
-[hidden] {
-  display: none !important;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -154,704 +42,270 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.6;
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
-h1, h2, h3 {
-  margin: 0 0 var(--space-3);
-  line-height: 1.3;
-  font-weight: 650;
-}
-
+h1, h2, h3 { margin: 0 0 12px; line-height: 1.3; }
 h1 { font-size: 1.5rem; }
 h2 { font-size: 1.2rem; }
 h3 { font-size: 1rem; }
-
-p { margin: 0 0 var(--space-3); }
+p { margin: 0 0 12px; }
 p:last-child { margin-bottom: 0; }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
+a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-
-code, .mono {
-  font-family: var(--font-mono);
-  font-size: 0.86em;
-}
 
 code {
   padding: 1px 5px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   background: var(--surface-alt);
-  word-break: break-all;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: .86em;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* A single visible focus style for everything. :focus-visible rather than :focus so a mouse click
- * on a button does not leave a ring behind, while keyboard tabbing always shows one. */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
+.muted { color: var(--muted); }
 
-.muted { color: var(--text-muted); }
-
-.sprite {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.icon {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.skip-link {
-  position: absolute;
-  top: -100px;
-  left: var(--space-3);
-  z-index: 100;
-  padding: var(--space-2) var(--space-4);
-  border-radius: 0 0 var(--radius) var(--radius);
-  background: var(--accent);
-  color: var(--text-inverse);
-  font-weight: 600;
-}
-
-.skip-link:focus {
-  top: 0;
-}
-
-/* ==========================================================================
-   Layout
-   ========================================================================== */
+/* ---------- 布局 ---------- */
 
 .wrap {
   width: 100%;
-  max-width: var(--wrap);
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 var(--space-4);
+  padding: 0 16px;
 }
 
-main.wrap {
-  flex: 1 0 auto;
-  padding-top: var(--space-5);
-  padding-bottom: var(--space-6);
-}
+main.wrap { flex: 1 0 auto; padding-top: 24px; padding-bottom: 32px; }
 
-main:focus { outline: none; }
-
-/* ==========================================================================
-   Header
-   ========================================================================== */
+/* ---------- 顶栏 ---------- */
 
 .site-header {
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-inner {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  min-height: 60px;
+  gap: 16px;
+  min-height: 58px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text);
-  flex: none;
-}
-
+.brand { font-weight: 650; color: var(--text); }
 .brand:hover { text-decoration: none; }
 
-.brand-mark {
-  width: 24px;
-  height: 24px;
-  color: var(--accent);
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
-.brand-text strong { font-size: 1rem; letter-spacing: 0.2px; }
-
-.brand-text small {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.site-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: auto;
-}
+.site-nav { display: flex; gap: 4px; margin-left: auto; }
 
 .site-nav a {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius);
-  color: var(--text-muted);
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: var(--muted);
   font-weight: 550;
   white-space: nowrap;
 }
 
-.site-nav a:hover {
-  background: var(--surface-alt);
-  color: var(--text);
-  text-decoration: none;
-}
-
-/* aria-current is the state and is-active is its styling hook. Styling off the ARIA attribute
- * directly would work too, but keeping them separate means the visual state can change without
- * silently changing what a screen reader announces. */
-.site-nav a.is-active {
-  background: var(--accent-weak);
-  color: var(--accent);
-}
+.site-nav a:hover { background: var(--surface-alt); color: var(--text); text-decoration: none; }
+.site-nav a.is-active { background: var(--accent-weak); color: var(--accent); }
 
 .site-footer {
   flex: none;
+  padding: 16px 0;
   border-top: 1px solid var(--border);
-  padding: var(--space-4) 0;
   background: var(--surface);
-  font-size: 0.85rem;
+  color: var(--muted);
+  font-size: .85rem;
 }
 
-/* ==========================================================================
-   Buttons and form controls
-   ========================================================================== */
+/* ---------- 按钮与输入 ---------- */
 
-.button,
-.icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+.button {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   font: inherit;
   font-weight: 550;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 
-.button:hover:not(:disabled),
-.icon-button:hover:not(:disabled) {
-  background: var(--surface-alt);
-  border-color: var(--accent);
-  text-decoration: none;
-}
+.button:hover:not(:disabled) { border-color: var(--accent); background: var(--surface-alt); }
+.button:disabled { opacity: .5; cursor: not-allowed; }
 
-.button:disabled,
-.icon-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.button-primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--text-inverse);
-}
-
-.button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.icon-button {
-  padding: var(--space-2);
-  flex: none;
-}
-
-input[type="number"],
-input[type="text"],
-input[type="search"] {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+input[type="number"] {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  min-width: 0;
+  width: 10rem;
 }
 
-input::placeholder { color: var(--text-muted); }
-
-/* Spacing for a region that is injected into a card below other content — the lookup result and
- * its error card. A class rather than an inline style so the spacing stays with the rest of the
- * scale and can be overridden in the responsive block. */
-.region-spaced { margin-top: var(--space-4); }
-
-/* A label that stays visible next to its control. A placeholder is not a label — it vanishes the
- * moment anything is typed, and it is not announced as the field's name. */
 .field {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
-.field > label {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  font-weight: 550;
-}
+.field label { color: var(--muted); font-size: .9rem; font-weight: 550; }
 
-/* ==========================================================================
-   Cards, states, notices
-   ========================================================================== */
+/* ---------- 卡片 ---------- */
 
 .card {
-  padding: var(--space-5);
+  padding: 24px;
+  margin-bottom: 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
 }
-
-.card + .card { margin-top: var(--space-4); }
 
 .card-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: var(--space-4);
+  margin-bottom: 16px;
 }
 
 .card-head h2 { margin: 0; }
 
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
 }
 
-.state-card {
-  text-align: center;
-  padding: var(--space-6) var(--space-5);
-}
+.entry-card { display: flex; flex-direction: column; gap: 4px; color: var(--text); }
+.entry-card:hover { border-color: var(--accent); text-decoration: none; }
+.entry-card strong { font-size: 1.05rem; }
+.entry-card span { color: var(--muted); font-size: .9rem; }
 
-.state-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--text-muted);
-}
+.lede { max-width: 62ch; color: var(--muted); }
 
-.state-card .state-icon { margin-bottom: var(--space-3); }
-
-.state-card p { margin-bottom: var(--space-4); }
-
-/* Loading placeholder. min-height keeps the page from jumping when the real content lands, which
- * otherwise moves whatever the user was about to click. */
-.loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 140px;
-  color: var(--text-muted);
-}
-
-.loading::before {
-  content: "";
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .loading::before { animation: none; }
-}
-
-/* The inline error card. Retry is a button inside it, not a browser reload — a reload would lose
- * the filters and the page number the user had already set. */
-.error-card {
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--danger-border);
-  border-left-width: 4px;
-  border-radius: var(--radius);
-  background: var(--danger-weak);
-}
-
-.error-card h3 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--danger);
-}
-
-.error-card .error-message {
-  margin-bottom: var(--space-3);
-  word-break: break-word;
-}
-
-.error-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  margin-bottom: var(--space-3);
-  font-size: 0.82rem;
-  color: var(--text-muted);
-}
-
-.error-meta code {
-  background: transparent;
-  border-color: var(--danger-border);
-}
-
-.notice {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
-  border: 1px solid var(--warning-border);
-  border-radius: var(--radius);
-  background: var(--warning-weak);
-  color: var(--warning);
-  font-size: 0.9rem;
-}
-
-.notice .icon { margin-top: 3px; }
-
-.notice p { margin: 0; }
+.state-card { text-align: center; padding: 32px; }
 
 .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 9px;
-  border: 1px solid var(--border);
+  display: inline-block;
+  padding: 2px 10px;
   border-radius: 999px;
   background: var(--surface-alt);
-  font-size: 0.78rem;
+  color: var(--muted);
+  font-size: .8rem;
   font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 
-.badge-ok {
-  border-color: transparent;
-  background: var(--success-weak);
-  color: var(--success);
-}
+.badge-ok { background: var(--accent-weak); color: var(--success); }
+.badge-bad { background: var(--danger-weak); color: var(--danger); }
 
-.badge-bad {
-  border-color: var(--danger-border);
+.loading { padding: 40px 0; text-align: center; color: var(--muted); }
+.empty { padding: 40px 0; text-align: center; color: var(--muted); }
+
+.error-card {
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border: 1px solid var(--danger-border);
+  border-left-width: 4px;
+  border-radius: 8px;
   background: var(--danger-weak);
-  color: var(--danger);
 }
 
-.empty {
-  padding: var(--space-6) var(--space-4);
-  text-align: center;
-  color: var(--text-muted);
-}
+.error-card h3 { color: var(--danger); }
+.error-card p { word-break: break-word; }
 
-/* ==========================================================================
-   Tables
-   ========================================================================== */
+.error-meta { margin-bottom: 12px; color: var(--muted); font-size: .82rem; }
+.error-meta code { border-color: var(--danger-border); background: transparent; }
 
-/* The wrapper, not the table, is what scrolls. A wide table must never make the page body scroll
- * horizontally — on a phone that breaks pinching and looks like a rendering bug. */
-.table-scroll {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
+/* ---------- 表格 ---------- */
 
-.table-scroll table { min-width: 520px; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.table-scroll table { width: 100%; min-width: 520px; border-collapse: collapse; }
 
 thead th {
-  position: sticky;
-  top: 0;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
   background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
   text-align: left;
-  font-size: 0.82rem;
-  font-weight: 650;
-  color: var(--text-muted);
+  color: var(--muted);
+  font-size: .82rem;
   white-space: nowrap;
 }
 
-tbody td {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-}
-
+tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface-alt); }
 
-td.num, th.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- 分类树 ---------- */
+
+.tree, .tree-child { margin: 0; padding: 0; list-style: none; }
+
+.tree-child {
+  margin-left: 20px;
+  padding-left: 16px;
+  border-left: 1px dashed var(--border);
 }
-
-/* ==========================================================================
-   Category tree
-   ========================================================================== */
-
-.tree,
-.tree ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tree li + li { margin-top: 2px; }
 
 .tree-node {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius);
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
 }
 
-/* A CSS-drawn marker rather than an icon. Icons in this project are inline SVG symbols, and an
- * <svg> built through jQuery lands in the HTML namespace where it renders as nothing — the sprite
- * in index.html works only because the HTML parser assigns the SVG namespace itself. A pseudo
- * element sidesteps the whole question. */
+.tree-node:hover { background: var(--surface-alt); }
+
+/* 用 CSS 画标记，不用 SVG：jQuery 建的 <svg> 会落在 HTML 命名空间里，渲染不出来。 */
 .tree-node::before {
   content: "";
   width: 6px;
   height: 6px;
   flex: none;
   border-radius: 2px;
-  background: var(--border-strong);
+  background: var(--border);
 }
 
-.tree-node:hover { background: var(--surface-alt); }
-
+.tree > li > .tree-node::before { background: var(--accent); }
 .tree-name { font-weight: 550; }
+.tree > li > .tree-node .tree-name { font-weight: 650; }
+.tree-meta { margin-left: auto; color: var(--muted); font-size: .78rem; }
 
-.tree-meta {
-  margin-left: auto;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Indent guides. Nested uls alone give no visual depth once the rows are wide, and the depth is the
- * whole point of a tree view. */
-.tree ul {
-  margin-left: var(--space-5);
-  padding-left: var(--space-4);
-  border-left: 1px dashed var(--border-strong);
-}
-
-.tree-depth-0 > .tree-node .tree-name { font-weight: 650; }
-
-.tree-depth-0 > .tree-node::before { background: var(--accent); }
-
-/* ==========================================================================
-   Pager
-   ========================================================================== */
+/* ---------- 分页 ---------- */
 
 .pager {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: 12px;
   flex-wrap: wrap;
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
 }
 
-.pager-status {
-  font-size: 0.88rem;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
+.pager-status { color: var(--muted); font-size: .88rem; }
+.pager-actions { display: flex; gap: 8px; }
 
-.pager-actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-/* ==========================================================================
-   Toasts
-   ========================================================================== */
-
-.toast-host {
-  position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  max-width: min(360px, calc(100vw - var(--space-5)));
-  pointer-events: none;
-}
-
-.toast {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-left-width: 4px;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-  font-size: 0.9rem;
-  word-break: break-word;
-  pointer-events: auto;
-  animation: toast-in 0.16s ease-out;
-}
-
-.toast-ok { border-left-color: var(--success); }
-.toast-error { border-left-color: var(--danger); }
-
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .toast { animation: none; }
-}
-
-/* ==========================================================================
-   Home view
-   ========================================================================== */
-
-.hero h1 { font-size: 1.7rem; }
-
-.hero .lede {
-  max-width: 62ch;
-  color: var(--text-muted);
-}
-
-.entry-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  color: var(--text);
-}
-
-.entry-card:hover {
-  border-color: var(--accent);
-  text-decoration: none;
-}
-
-.entry-card .icon {
-  width: 24px;
-  height: 24px;
-  color: var(--accent);
-}
-
-.entry-card strong { font-size: 1.05rem; }
-.entry-card span { color: var(--text-muted); font-size: 0.9rem; }
-
-.status-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-/* ==========================================================================
-   Responsive
-   ========================================================================== */
+/* ---------- 响应式 ---------- */
 
 @media (max-width: 720px) {
-  .header-inner {
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    padding-top: var(--space-2);
-    padding-bottom: var(--space-2);
-  }
-
-  .brand-text small { display: none; }
-
-  /* The nav drops to its own full-width row and scrolls sideways if it still does not fit, rather
-   * than wrapping into the header and pushing content down. */
-  .site-nav {
-    order: 3;
-    width: 100%;
-    margin-left: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .site-nav::-webkit-scrollbar { display: none; }
-
-  .site-nav a { padding: var(--space-2); }
-
-  .site-nav a span { display: none; }
-  .site-nav a .icon { width: 20px; height: 20px; }
-
-  .icon-button { margin-left: auto; }
-
-  h1 { font-size: 1.3rem; }
-  .hero h1 { font-size: 1.4rem; }
-
-  .card { padding: var(--space-4); }
-  .state-card { padding: var(--space-5) var(--space-4); }
-
+  .header-inner { flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+  .brand { width: 100%; }
+  .site-nav { margin-left: 0; overflow-x: auto; }
+  .card { padding: 16px; }
   .pager { justify-content: center; }
   .pager-status { width: 100%; text-align: center; }
   .pager-actions { width: 100%; }
   .pager-actions .button { flex: 1; }
-
-  .tree ul { margin-left: var(--space-3); padding-left: var(--space-2); }
+  .tree-child { margin-left: 8px; padding-left: 8px; }
 }
