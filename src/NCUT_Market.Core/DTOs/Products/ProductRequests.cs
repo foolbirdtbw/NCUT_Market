@@ -16,17 +16,26 @@ namespace NCUT_Market.Core.DTOs.Products;
 /// <param name="CategoryId">Must be an existing active category.</param>
 /// <param name="DormitoryAreaId">Must be an existing active dormitory area.</param>
 /// <remarks>
+/// <para>
 /// Attributes are targeted at <c>param:</c>, not <c>property:</c> — MVC refuses to validate a
 /// positional record whose metadata sits on the generated property, and throws instead of returning
 /// a validation error.
+/// </para>
+/// <para>
+/// The messages are written out rather than left to the default DataAnnotations text, which is
+/// English and phrased for a developer ("The field Price must be between 0 and..."). These strings
+/// are shown verbatim under the form that produced them.
+/// </para>
 /// </remarks>
 public sealed record CreateProductRequest(
-    [param: Required, StringLength(100, MinimumLength = 1)] string Title,
-    [param: StringLength(2000)] string? Description,
-    [param: Range(0, 99999999.99)] decimal Price,
-    [param: Range(1, 4)] int Condition,
-    [param: Range(1, long.MaxValue)] long CategoryId,
-    [param: Range(1, long.MaxValue)] long DormitoryAreaId);
+    [param: Required(ErrorMessage = "请填标题。")]
+    [param: StringLength(100, MinimumLength = 1, ErrorMessage = "标题最多 100 个字符。")]
+    string Title,
+    [param: StringLength(2000, ErrorMessage = "描述最多 2000 个字符。")] string? Description,
+    [param: Range(0, 99999999.99, ErrorMessage = "价格要在 0 到 99999999.99 之间。")] decimal Price,
+    [param: Range(1, 4, ErrorMessage = "成色只能是 1 到 4。")] int Condition,
+    [param: Range(1, long.MaxValue, ErrorMessage = "请选择分类。")] long CategoryId,
+    [param: Range(1, long.MaxValue, ErrorMessage = "请选择宿舍区。")] long DormitoryAreaId);
 
 /// <summary>
 /// An edit to an existing listing. Same shape as <see cref="CreateProductRequest"/> — every field is
@@ -40,9 +49,11 @@ public sealed record CreateProductRequest(
 /// <param name="CategoryId">Must be an existing active category.</param>
 /// <param name="DormitoryAreaId">Must be an existing active dormitory area.</param>
 public sealed record UpdateProductRequest(
-    [param: Required, StringLength(100, MinimumLength = 1)] string Title,
-    [param: StringLength(2000)] string? Description,
-    [param: Range(0, 99999999.99)] decimal Price,
-    [param: Range(1, 4)] int Condition,
-    [param: Range(1, long.MaxValue)] long CategoryId,
-    [param: Range(1, long.MaxValue)] long DormitoryAreaId);
+    [param: Required(ErrorMessage = "请填标题。")]
+    [param: StringLength(100, MinimumLength = 1, ErrorMessage = "标题最多 100 个字符。")]
+    string Title,
+    [param: StringLength(2000, ErrorMessage = "描述最多 2000 个字符。")] string? Description,
+    [param: Range(0, 99999999.99, ErrorMessage = "价格要在 0 到 99999999.99 之间。")] decimal Price,
+    [param: Range(1, 4, ErrorMessage = "成色只能是 1 到 4。")] int Condition,
+    [param: Range(1, long.MaxValue, ErrorMessage = "请选择分类。")] long CategoryId,
+    [param: Range(1, long.MaxValue, ErrorMessage = "请选择宿舍区。")] long DormitoryAreaId);

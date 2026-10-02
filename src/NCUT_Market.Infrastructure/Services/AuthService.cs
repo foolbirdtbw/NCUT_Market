@@ -36,7 +36,7 @@ internal sealed class AuthService(
         {
             return OperationResult<AuthResponse>.Failure(
                 ErrorCodes.Conflict,
-                $"Username '{username}' is already taken.");
+                $"用户名「{username}」已经被注册了。");
         }
 
         var user = new User
@@ -69,7 +69,7 @@ internal sealed class AuthService(
         {
             return OperationResult<AuthResponse>.Failure(
                 ErrorCodes.InvalidCredentials,
-                "Invalid username or password.");
+                "用户名或密码不对。");
         }
 
         var verification = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
@@ -80,7 +80,7 @@ internal sealed class AuthService(
             // would turn this endpoint into a way to enumerate who has an account.
             return OperationResult<AuthResponse>.Failure(
                 ErrorCodes.InvalidCredentials,
-                "Invalid username or password.");
+                "用户名或密码不对。");
         }
 
         // A disabled account is checked after the password, not before: answering "this account is
@@ -89,7 +89,7 @@ internal sealed class AuthService(
         {
             return OperationResult<AuthResponse>.Failure(
                 ErrorCodes.Forbidden,
-                "This account has been disabled.");
+                "这个账号已经被停用了。");
         }
 
         // VerifyHashedPassword reports SuccessRehashNeeded when the stored hash was produced with an
@@ -117,7 +117,7 @@ internal sealed class AuthService(
         return user is null
             ? OperationResult<CurrentUserResponse>.Failure(
                 ErrorCodes.NotFound,
-                $"User {userId} was not found.")
+                "找不到这个用户。")
             : OperationResult<CurrentUserResponse>.Success(user);
     }
 

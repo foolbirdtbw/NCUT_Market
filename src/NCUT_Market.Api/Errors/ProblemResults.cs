@@ -78,20 +78,20 @@ internal static class ProblemResults
     };
 
     /// <summary>
-    /// The short English title for a status. Matches what <c>ApiExceptionHandler</c> and the
-    /// existing controllers already emit for the same status.
+    /// The short title for a status. Matches what <c>ApiExceptionHandler</c> emits for the same
+    /// status, so the two never disagree about what a 409 is called.
     /// </summary>
     private static string TitleFor(int status) => status switch
     {
-        StatusCodes.Status400BadRequest => "Bad request",
-        StatusCodes.Status401Unauthorized => "Unauthorized",
-        StatusCodes.Status403Forbidden => "Forbidden",
-        StatusCodes.Status404NotFound => "Not found",
-        StatusCodes.Status405MethodNotAllowed => "Method not allowed",
-        StatusCodes.Status409Conflict => "Conflict",
-        StatusCodes.Status415UnsupportedMediaType => "Unsupported media type",
-        StatusCodes.Status501NotImplemented => "Not implemented",
-        StatusCodes.Status504GatewayTimeout => "Request timed out",
-        _ => "An unexpected error occurred"
+        StatusCodes.Status400BadRequest => "请求格式不对",
+        StatusCodes.Status401Unauthorized => "需要登录",
+        StatusCodes.Status403Forbidden => "没有权限",
+        StatusCodes.Status404NotFound => "找不到",
+        StatusCodes.Status405MethodNotAllowed => "不支持这个请求方法",
+        StatusCodes.Status409Conflict => "操作冲突",
+        StatusCodes.Status415UnsupportedMediaType => "不支持这种文件类型",
+        StatusCodes.Status501NotImplemented => "功能还没做",
+        StatusCodes.Status504GatewayTimeout => "请求超时",
+        _ => "服务器出错了"
     };
 }

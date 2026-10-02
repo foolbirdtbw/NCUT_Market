@@ -164,7 +164,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductDetailResponse>.Failure(
                 ErrorCodes.NotFound,
-                $"Product {id} was not found.");
+                "找不到这个商品。");
         }
 
         // A listing that is not live is not merely hidden from the feed, it is invisible: reported
@@ -175,7 +175,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductDetailResponse>.Failure(
                 ErrorCodes.NotFound,
-                $"Product {id} was not found.");
+                "找不到这个商品。");
         }
 
         return OperationResult<ProductDetailResponse>.Success(WithImageUrls(product));
@@ -269,7 +269,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductDetailResponse>.Failure(
                 ErrorCodes.InvalidState,
-                "A sold listing cannot be published again.");
+                "已卖出的商品不能再上架。");
         }
 
         var hasImage = await dbContext.ProductImages
@@ -279,7 +279,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductDetailResponse>.Failure(
                 ErrorCodes.InvalidArgument,
-                "A listing needs at least one photo before it can be published.");
+                "上架前至少要传一张照片。");
         }
 
         if (product.Status != ProductStatus.Published)
@@ -314,7 +314,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductDetailResponse>.Failure(
                 ErrorCodes.InvalidState,
-                "Only a published listing can be taken offline.");
+                "只有在售中的商品才能下架。");
         }
 
         product.Status = ProductStatus.Offline;
@@ -341,7 +341,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductDetailResponse>.Failure(
                 ErrorCodes.InvalidState,
-                "Only a published listing can be marked as sold.");
+                "只有在售中的商品才能标记为已售出。");
         }
 
         product.Status = ProductStatus.Sold;
@@ -371,7 +371,7 @@ internal sealed class ProductService(
         {
             return OperationResult<bool>.Failure(
                 ErrorCodes.InvalidState,
-                "Take the listing offline before deleting it.");
+                "请先下架，再删除。");
         }
 
         var keys = await dbContext.ProductImages
@@ -414,7 +414,7 @@ internal sealed class ProductService(
             // request itself is wrong, so telling the caller to fix its arguments would be a lie.
             return OperationResult<ProductImageResponse>.Failure(
                 ErrorCodes.Conflict,
-                $"A listing can hold at most {MaxImagesPerProduct} photos.");
+                $"一个商品最多放 {MaxImagesPerProduct} 张照片。");
         }
 
         var buffered = await ReadWithLimitAsync(content, MaxImageBytes, cancellationToken);
@@ -423,7 +423,7 @@ internal sealed class ProductService(
         {
             return OperationResult<ProductImageResponse>.Failure(
                 ErrorCodes.InvalidArgument,
-                $"Each photo must be at most {MaxImageBytes / (1024 * 1024)} MB.");
+                $"每张照片不能超过 {MaxImageBytes / (1024 * 1024)} MB。");
         }
 
         StoredImage? stored;
@@ -439,14 +439,14 @@ internal sealed class ProductService(
             // unexpected from the server's point of view.
             return OperationResult<ProductImageResponse>.Failure(
                 ErrorCodes.UnsupportedMediaType,
-                "That file could not be read as an image.");
+                "这个文件不是有效的图片。");
         }
 
         if (stored is null)
         {
             return OperationResult<ProductImageResponse>.Failure(
                 ErrorCodes.UnsupportedMediaType,
-                "Only JPEG, PNG and WebP images are accepted.");
+                "只支持 JPEG、PNG 和 WebP 格式的图片。");
         }
 
         var image = new ProductImage
@@ -500,7 +500,7 @@ internal sealed class ProductService(
         {
             return OperationResult<bool>.Failure(
                 ErrorCodes.NotFound,
-                $"Image {imageId} was not found on product {productId}.");
+                "找不到这张照片。");
         }
 
         var stored = new StoredImage(
@@ -576,7 +576,7 @@ internal sealed class ProductService(
 
         if (product is null)
         {
-            return (null, ErrorCodes.NotFound, $"Product {id} was not found.");
+            return (null, ErrorCodes.NotFound, "找不到这个商品。");
         }
 
         if (product.SellerId != sellerId)
@@ -585,7 +585,7 @@ internal sealed class ProductService(
             // is information a stranger guessing ids would otherwise have to work for — but this is
             // a campus marketplace where the same is already true of every published listing, and a
             // clear "that is not yours" is worth more than the ambiguity.
-            return (null, ErrorCodes.Forbidden, "You can only change your own listings.");
+            return (null, ErrorCodes.Forbidden, "只能修改自己发布的商品。");
         }
 
         return (product, null, null);
@@ -604,7 +604,7 @@ internal sealed class ProductService(
 
         if (!categoryExists)
         {
-            return (ErrorCodes.InvalidArgument, $"Category {categoryId} does not exist.");
+            return (ErrorCodes.InvalidArgument, "所选分类不存在。");
         }
 
         var areaExists = await dbContext.DormitoryAreas
@@ -612,7 +612,7 @@ internal sealed class ProductService(
 
         return areaExists
             ? (null, null)
-            : (ErrorCodes.InvalidArgument, $"Dormitory area {dormitoryAreaId} does not exist.");
+            : (ErrorCodes.InvalidArgument, "所选宿舍区不存在。");
     }
 
     /// <summary>

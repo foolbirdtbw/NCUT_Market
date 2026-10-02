@@ -59,7 +59,7 @@ internal sealed class DormitoryAreaService(AppDbContext dbContext) : IDormitoryA
         return area is null
             ? OperationResult<DormitoryAreaResponse>.Failure(
                 ErrorCodes.NotFound,
-                $"Dormitory area {id} was not found.")
+                "找不到这个宿舍区。")
             : OperationResult<DormitoryAreaResponse>.Success(area);
     }
 }

@@ -55,10 +55,10 @@ internal sealed class AuthorizationProblemHandler : IAuthorizationMiddlewareResu
             ProblemDetails = new ProblemDetails
             {
                 Status = status,
-                Title = authorizeResult.Challenged ? "Unauthorized" : "Forbidden",
+                Title = authorizeResult.Challenged ? "需要登录" : "没有权限",
                 Detail = authorizeResult.Challenged
-                    ? "Sign in to continue."
-                    : "You do not have permission to do that."
+                    ? "请先登录。"
+                    : "你没有权限做这件事。"
             }
         });
     }

@@ -17,8 +17,9 @@ namespace NCUT_Market.Api.Errors;
 /// the ORM's failure genuinely is the answer rather than a symptom.
 /// </para>
 /// <para>
-/// Titles are English. That is a departure from the sibling project, chosen for this one; the
-/// <c>code</c> member is the stable thing clients should branch on, and the title is display text.
+/// Titles are Chinese, because the frontend falls back to <c>title</c> whenever a response carries
+/// no <c>detail</c> — which is every case this handler produces. The <c>code</c> member is still the
+/// stable thing clients should branch on; the title is display text only.
 /// </para>
 /// </remarks>
 public sealed class ApiExceptionHandler(
@@ -42,45 +43,45 @@ public sealed class ApiExceptionHandler(
         {
             BadHttpRequestException => (
                 StatusCodes.Status400BadRequest,
-                "Bad request",
+                "请求格式不对",
                 ErrorCodes.BadRequest,
                 LogLevel.Warning),
             // Covers ArgumentNullException and ArgumentOutOfRangeException too.
             ArgumentException => (
                 StatusCodes.Status400BadRequest,
-                "Invalid argument",
+                "参数不对",
                 ErrorCodes.InvalidArgument,
                 LogLevel.Warning),
             // 403 rather than 401: a 401 is a challenge and requires WWW-Authenticate, which needs the
             // authentication middleware this stage does not have yet.
             UnauthorizedAccessException => (
                 StatusCodes.Status403Forbidden,
-                "Forbidden",
+                "没有权限",
                 ErrorCodes.Forbidden,
                 LogLevel.Warning),
             KeyNotFoundException => (
                 StatusCodes.Status404NotFound,
-                "Not found",
+                "找不到",
                 ErrorCodes.NotFound,
                 LogLevel.Information),
             DbUpdateException => (
                 StatusCodes.Status409Conflict,
-                "Conflict",
+                "操作冲突",
                 ErrorCodes.Conflict,
                 LogLevel.Warning),
             NotImplementedException => (
                 StatusCodes.Status501NotImplemented,
-                "Not implemented",
+                "功能还没做",
                 ErrorCodes.NotImplemented,
                 LogLevel.Warning),
             TimeoutException or OperationCanceledException => (
                 StatusCodes.Status504GatewayTimeout,
-                "Request timed out",
+                "请求超时",
                 ErrorCodes.Timeout,
                 LogLevel.Error),
             _ => (
                 StatusCodes.Status500InternalServerError,
-                "An unexpected error occurred",
+                "服务器出错了",
                 ErrorCodes.InternalError,
                 LogLevel.Error)
         };
