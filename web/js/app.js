@@ -1,34 +1,78 @@
-/* 三个页面：首页、分类字典、宿舍区字典。
- * 视图整块用 .html() 重建，事件一律委托在 document 上绑一次。 */
+/* 路由与全局事件。
+ *
+ * 视图整块用 .html() 重建，事件一律委托在 document 上绑一次——
+ * 这样页面换掉之后不用重新绑，也不会有监听器泄漏。 */
 (function ($) {
   "use strict";
 
-  // 服务端来的字符串插进 HTML 前先转义。
-  function esc(value) {
-    return String(value == null ? "" : value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+  var NM = window.NM;
+
+  /* 路由表。顺序有意义：/products/new 必须排在 /products/(\d+) 前面，
+   * 否则以后加了更宽的规则会先被吃掉。 */
+  var routes = [
+    [/^\/$/, function () { showHome(); }],
+    [/^\/products$/, function (match, query) { products.showList(query); }],
+    [/^\/products\/new$/, function () { products.showCreate(); }],
+    [/^\/products\/(\d+)\/edit$/, function (match) { products.showEdit(match[1]); }],
+    [/^\/products\/(\d+)$/, function (match) { products.showDetail(match[1]); }],
+    [/^\/mine$/, function (match, query) { products.showMine(query); }],
+    [/^\/login$/, function () { auth.showLogin(); }],
+    [/^\/register$/, function () { auth.showRegister(); }],
+    [/^\/categories$/, function () { showCategories(); }],
+    [/^\/dormitory-areas$/, function () { showDormitoryAreas(); }]
+  ];
+
+  /* hash 拆成路径和查询串两半。筛选条件放在查询串里，所以刷新和后退都能回到同一页。 */
+  function parseHash() {
+    var raw = (location.hash || "").replace(/^#/, "");
+    var mark = raw.indexOf("?");
+    var path = mark === -1 ? raw : raw.slice(0, mark);
+    var query = {};
+
+    if (mark !== -1) {
+      raw.slice(mark + 1).split("&").forEach(function (pair) {
+        if (!pair) {
+          return;
+        }
+
+        var eq = pair.indexOf("=");
+        var key = eq === -1 ? pair : pair.slice(0, eq);
+        var value = eq === -1 ? "" : pair.slice(eq + 1);
+
+        try {
+          query[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, " "));
+        } catch (e) {
+          // 坏掉的百分号编码不该让整页白屏，跳过这一段就是。
+        }
+      });
+    }
+
+    return { path: path === "" ? "/" : path, query: query };
   }
 
-  // 接口发的是北京时间的墙上时钟字符串（"2026-09-29T13:43:09.037"，无时区后缀）。
-  // 直接按文本重排，不构造 Date。
-  function formatDateTime(value) {
-    return value ? String(value).replace("T", " ").slice(0, 16) : "—";
+  function route() {
+    var parsed = parseHash();
+
+    for (var index = 0; index < routes.length; index++) {
+      var match = routes[index][0].exec(parsed.path);
+
+      if (match) {
+        routes[index][1](match, parsed.query);
+        paintNav(parsed.path);
+        return;
+      }
+    }
+
+    $("#view").html('<div class="card state-card"><h1>页面不存在</h1>' +
+      '<p class="muted">' + NM.esc(location.hash) + '</p>' +
+      '<a class="button" href="#/products">去逛商品</a></div>');
+
+    paintNav(null);
   }
 
-  function loading() {
-    return '<div class="loading">加载中…</div>';
-  }
-
-  function errorCard(error, retry) {
-    return '<div class="error-card"><h3>加载失败</h3>' +
-      '<p>' + esc(error.message) + '</p>' +
-      (error.code ? '<div class="error-meta">code: <code>' + esc(error.code) + '</code>' +
-        (error.traceId ? ' · traceId: <code>' + esc(error.traceId) + '</code>' : '') + '</div>' : '') +
-      (retry ? '<button class="button" data-reload="' + retry + '">重试</button>' : '') +
-      '</div>';
+  function paintNav(path) {
+    $("#site-nav a").removeClass("is-active").removeAttr("aria-current");
+    $("#site-nav a[href='#" + path + "']").addClass("is-active").attr("aria-current", "page");
   }
 
   /* ---------- 首页 ---------- */
@@ -37,22 +81,18 @@
     $("#view").html(
       '<div class="card">' +
       '<h1>校园二手交易平台</h1>' +
-      '<p class="lede">北方工业大学校园内的二手物品交易平台。后端目前只有分类与宿舍区两个字典' +
-      '接口，商品功能还没做，所以这一版只有下面两个页面。</p>' +
-      '</div>' +
+      '<p class="lede">北方工业大学校园内的二手物品交易平台。把闲置的东西挂上来，' +
+      '或者看看别人在卖什么。</p>' +
+      '<div class="action-bar">' +
+      '<a class="button button-primary" href="#/products">去逛商品</a>' +
+      '<a class="button" href="#/products/new">发布商品</a>' +
+      '</div></div>' +
       '<div class="grid-2">' +
       '<a class="card entry-card" href="#/categories">' +
       '<strong>分类字典</strong><span>GET /api/categories</span></a>' +
       '<a class="card entry-card" href="#/dormitory-areas">' +
       '<strong>宿舍区字典</strong><span>GET /api/dormitory-areas</span></a>' +
-      '</div>' +
-      '<div class="card"><h2>服务状态</h2><div id="health">' + loading() + '</div></div>');
-
-    api("/health").then(function (body) {
-      $("#health").html('<span class="badge badge-ok">正常</span> status = ' + esc(body.status));
-    }, function (error) {
-      $("#health").html('<span class="badge badge-bad">不可达</span> ' + esc(error.message));
-    });
+      '</div>');
   }
 
   /* ---------- 分类字典 ---------- */
@@ -71,7 +111,7 @@
       children.map(function (item) {
         return '<li>' +
           '<div class="tree-node">' +
-          '<span class="tree-name">' + esc(item.name) + '</span>' +
+          '<span class="tree-name">' + NM.esc(item.name) + '</span>' +
           '<span class="tree-meta">ID ' + item.id + ' · 排序 ' + item.sortOrder + '</span>' +
           '</div>' +
           treeHtml(items, item.id, depth + 1) +
@@ -84,57 +124,33 @@
     $("#view").html(
       '<div class="card">' +
       '<div class="card-head"><h2>分类字典</h2>' +
-      '<button class="button" data-reload="categories">刷新</button></div>' +
-      '<div id="tree">' + loading() + '</div>' +
+      '<button class="button" data-reload>刷新</button></div>' +
+      '<div id="tree">' + NM.loading() + '</div>' +
       '</div>');
 
-    api("/api/categories", { page: 1, pageSize: 100 }).then(function (page) {
+    api.get("/api/categories", { page: 1, pageSize: 100 }).then(function (page) {
       var html = treeHtml(page.items, null, 0);
 
-      $("#tree").html((html ? html : '<div class="empty">没有分类。</div>') +
+      $("#tree").html((html ? html : NM.empty("没有分类。")) +
         '<p class="muted">共 ' + page.totalCount + ' 个分类。</p>');
     }, function (error) {
-      $("#tree").html(errorCard(error, "categories"));
+      $("#tree").html(NM.errorCard(error));
     });
   }
 
   /* ---------- 宿舍区字典 ---------- */
 
-  function pagerHtml(result) {
-    return '<div class="pager">' +
-      '<span class="pager-status">共 ' + result.totalCount + ' 条 · 第 ' +
-      result.page + '/' + result.totalPages + ' 页</span>' +
-      '<div class="pager-actions">' +
-      '<button class="button" data-page="' + (result.page - 1) + '"' +
-      (result.page <= 1 ? " disabled" : "") + '>上一页</button>' +
-      '<button class="button" data-page="' + (result.page + 1) + '"' +
-      (result.page >= result.totalPages ? " disabled" : "") + '>下一页</button>' +
-      '</div></div>';
-  }
-
   function showDormitoryAreas(page) {
     $("#view").html(
       '<div class="card">' +
       '<div class="card-head"><h2>宿舍区字典</h2>' +
-      '<button class="button" data-reload="dormitory">刷新</button></div>' +
-      '<div class="field">' +
-      '<label for="area-id">按 ID 查询</label>' +
-      '<input type="number" id="area-id" min="1" placeholder="例如 999999">' +
-      '<button class="button" data-action="lookup">查询</button>' +
-      '</div>' +
-      '<div id="lookup"></div>' +
-      '<div id="list">' + loading() + '</div>' +
+      '<button class="button" data-reload>刷新</button></div>' +
+      '<div id="list">' + NM.loading() + '</div>' +
       '</div>');
 
-    loadPage(page || 1);
-  }
-
-  function loadPage(page) {
-    $("#list").html(loading());
-
-    api("/api/dormitory-areas", { page: page, pageSize: 20 }).then(function (result) {
+    api.get("/api/dormitory-areas", { page: page || 1, pageSize: 20 }).then(function (result) {
       if (!result.items.length) {
-        $("#list").html('<div class="empty">这一页没有数据。</div>' + pagerHtml(result));
+        $("#list").html(NM.empty("这一页没有数据。"));
         return;
       }
 
@@ -145,59 +161,17 @@
         result.items.map(function (area) {
           return '<tr>' +
             '<td>' + area.id + '</td>' +
-            '<td>' + esc(area.name) + '</td>' +
+            '<td>' + NM.esc(area.name) + '</td>' +
             '<td class="num">' + area.sortOrder + '</td>' +
-            '<td>' + formatDateTime(area.createdAt) + '</td>' +
-            '<td>' + formatDateTime(area.updatedAt) + '</td>' +
+            '<td>' + NM.formatDateTime(area.createdAt) + '</td>' +
+            '<td>' + NM.formatDateTime(area.updatedAt) + '</td>' +
             '</tr>';
         }).join("") +
-        '</tbody></table></div>' + pagerHtml(result));
+        '</tbody></table></div>' +
+        NM.pagerHtml(result, function (target) { return "#/dormitory-areas?page=" + target; }));
     }, function (error) {
-      $("#list").html(errorCard(error, "dormitory"));
+      $("#list").html(NM.errorCard(error));
     });
-  }
-
-  // /api/dormitory-areas/{id} 是唯一会返回 404 的接口，用它验证错误卡这条路。
-  function lookupArea() {
-    var id = parseInt($("#area-id").val(), 10);
-
-    if (!id) {
-      $("#lookup").html('<div class="error-card"><p>请输入一个数字 ID。</p></div>');
-      return;
-    }
-
-    $("#lookup").html(loading());
-
-    api("/api/dormitory-areas/" + id).then(function (area) {
-      $("#lookup").html(
-        '<div class="card"><h3>' + esc(area.name) + '</h3>' +
-        '<p class="muted">ID ' + area.id + ' · 排序 ' + area.sortOrder +
-        ' · 创建于 ' + formatDateTime(area.createdAt) + '</p></div>');
-    }, function (error) {
-      $("#lookup").html(errorCard(error, null));
-    });
-  }
-
-  /* ---------- 路由 ---------- */
-
-  function route() {
-    var path = (location.hash || "").replace(/^#/, "");
-
-    if (path === "/categories") {
-      showCategories();
-    } else if (path === "/dormitory-areas") {
-      showDormitoryAreas(1);
-    } else if (path === "/" || path === "") {
-      path = "/";
-      showHome();
-    } else {
-      $("#view").html('<div class="card state-card"><h1>页面不存在</h1>' +
-        '<p class="muted">' + esc(location.hash) + '</p>' +
-        '<a class="button" href="#/">回到首页</a></div>');
-    }
-
-    $("#site-nav a").removeClass("is-active").removeAttr("aria-current");
-    $("#site-nav a[href='#" + path + "']").addClass("is-active").attr("aria-current", "page");
   }
 
   /* ---------- 主题 ---------- */
@@ -226,28 +200,59 @@
   /* ---------- 事件：委托在 document 上，绑一次 ---------- */
 
   $(document)
-    .on("click", "[data-reload]", function () {
-      if ($(this).attr("data-reload") === "categories") {
-        showCategories();
-      } else {
-        showDormitoryAreas(1);
-      }
+    // 重试/刷新统一走一次路由：重新执行当前页面就是重新拉一次数据。
+    .on("click", "[data-reload]", route)
+    .on("click", "#theme-toggle", toggleTheme)
+    .on("submit", "#search-form", function (event) {
+      event.preventDefault();
+      products.submitSearch();
     })
-    .on("click", "[data-page]", function () {
-      loadPage(parseInt($(this).attr("data-page"), 10));
+    .on("submit", "#create-form", function (event) {
+      event.preventDefault();
+      products.submitCreate();
     })
-    .on("click", "[data-action='lookup']", lookupArea)
-    .on("keydown", "#area-id", function (event) {
-      if (event.key === "Enter") {
-        lookupArea();
-      }
+    .on("submit", "#edit-form", function (event) {
+      event.preventDefault();
+      products.submitEdit(matchProductId());
     })
-    .on("click", "#theme-toggle", toggleTheme);
+    .on("submit", "#login-form", function (event) {
+      event.preventDefault();
+      auth.submitLogin();
+    })
+    .on("submit", "#register-form", function (event) {
+      event.preventDefault();
+      auth.submitRegister();
+    })
+    .on("click", "[data-action='sign-out']", function () {
+      auth.signOut();
+      location.hash = "#/products";
+    })
+    .on("click", "[data-action='publish']", function () { products.transition("publish"); })
+    .on("click", "[data-action='offline']", function () { products.transition("offline"); })
+    .on("click", "[data-action='sold']", function () { products.transition("sold"); })
+    .on("click", "[data-action='delete']", function () { products.deleteProduct(); })
+    .on("click", "[data-action='upload-image']", function () { products.uploadImage(); })
+    .on("click", "[data-action='delete-image']", function () {
+      products.deleteImage($(this).attr("data-image-id"));
+    });
+
+  /* 编辑表单提交时要知道改的是哪个 id。事件是委托的，处理函数不在渲染时的闭包里，
+   * 所以从 hash 现读。 */
+  function matchProductId() {
+    var match = /^#\/products\/(\d+)/.exec(location.hash);
+
+    return match ? match[1] : null;
+  }
 
   $(window).on("hashchange", route);
 
   $(function () {
     paintThemeButton();
+
+    // 本地缓存的用户信息可能过期（比如 token 还在但账号被停用了），
+    // 首屏先按缓存渲染，然后向服务端核一次。
+    auth.refresh();
+
     route();
   });
 })(jQuery);
