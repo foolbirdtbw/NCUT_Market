@@ -148,7 +148,22 @@ if (webRoot is not null)
     // No MapFallbackToFile is needed. The UI routes on the fragment (#/categories), which the
     // browser never sends to the server, so the only server-side path the UI needs is "/".
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = fileProvider,
+
+        // Revalidate every time rather than letting the browser guess.
+        //
+        // With no Cache-Control at all a browser applies heuristic freshness and can serve a stale
+        // index.html without asking. That is not theoretical: the frontend gained an #auth-slot div
+        // and a matching renderer, and a cached copy of the page from before that change has no such
+        // element — so the login and register buttons were absent with no error anywhere, because the
+        // renderer returns early when it cannot find its slot. A 304 against the existing ETag is
+        // cheap, and these files are small and change during development.
+        OnPrepareResponse = context =>
+            context.Context.Response.Headers.CacheControl = "no-cache"
+    });
 }
 
 // Uploaded product images, mounted from the same directory ImageStorage writes to. Kept separate
