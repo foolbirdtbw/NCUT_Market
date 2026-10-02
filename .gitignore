@@ -1,6 +1,11 @@
 bin/
 obj/
-out/
+# out/ is build output you can delete, with one exception: the frontend checks are source that
+# happens to live there. They are re-included below so a fresh clone can still run them. The
+# pattern has to be out/* and not out/ — git never descends into an excluded directory, so a
+# negation under a plain out/ would silently do nothing.
+out/*
+!out/check-frontend.js
 .vs/
 .vscode/
 *.user
@@ -9,6 +14,10 @@ out/
 appsettings.Development.local.json
 .env
 *.log
+
+# Uploaded product images and their generated sizes. Runtime data, not source: it is written by
+# the running API under the content root, which is the project directory during `dotnet run`.
+src/NCUT_Market.Api/data/
 
 TestResults/
 coverage*.json
