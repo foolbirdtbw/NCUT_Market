@@ -4,11 +4,39 @@
     <ProjectReference Include="..\NCUT_Market.Core\NCUT_Market.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    Password hashing uses PasswordHasher<T> from Microsoft.Extensions.Identity.Core, which lives in
+    the Microsoft.AspNetCore.App shared framework. A plain class library does not reference that
+    framework, so this line is what makes the type available.
+
+    Preferred over a Microsoft.Extensions.Identity.Core PackageReference on purpose: the package's
+    newest 9.x line would sit eight minor versions behind the Api project's 10.0.11 shared
+    framework, and one assembly resolved from two places is exactly the kind of split that only
+    shows up at runtime.
+  -->
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.19" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.19" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.19" />
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
+    <!--
+      Image resizing. Pinned to the 3.1 line deliberately — do not "upgrade" this to 4.x.
+
+      4.x enforces the Six Labors licence at BUILD time: without a $(SixLaborsLicenseKey),
+      $(SixLaborsLicenseFile), or a sixlabors.lic file, SixLabors.ImageSharp.targets fails the
+      build outright with "No Six Labors license found". That is not a legal footnote to note and
+      move past; it makes 4.x unusable here without a purchased key. The 3.1 line carries the same
+      Six Labors Split License as a legal matter (free for open source, personal use, and companies
+      under the revenue threshold) but does not gate the build on it.
+
+      So the licence is a real constraint on where this code can go: commercial use above the
+      threshold needs a paid key either way, and moving to 4.x additionally requires one just to
+      compile.
+    -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 
 </Project>

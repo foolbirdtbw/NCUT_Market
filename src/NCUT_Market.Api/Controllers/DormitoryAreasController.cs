@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using NCUT_Market.Api.Errors;
 using NCUT_Market.Core.Common;
 using NCUT_Market.Core.DTOs.DormitoryAreas;
 using NCUT_Market.Core.Services;
@@ -48,26 +49,7 @@ public sealed class DormitoryAreasController(IDormitoryAreaService dormitoryArea
 
         if (!result.Succeeded)
         {
-            // Built through the factory and then poked with the indexer, rather than passing an
-            // `extensions:` dictionary to Problem(). The factory invokes CustomizeProblemDetails on
-            // its way out, which has already inserted a status-derived `code` — and Problem() adds
-            // the caller's extensions with Add(), so supplying "code" there throws
-            // "An item with the same key has already been added" and turns a 404 into a 400. The
-            // indexer overwrites instead, which is what lets the service's own code win over the
-            // default derived from the status.
-            var problemDetails = ProblemDetailsFactory.CreateProblemDetails(
-                HttpContext,
-                statusCode: StatusCodes.Status404NotFound,
-                title: "Not found",
-                detail: result.ErrorMessage);
-
-            problemDetails.Extensions["code"] = result.ErrorCode;
-
-            return new ObjectResult(problemDetails)
-            {
-                StatusCode = problemDetails.Status,
-                ContentTypes = { "application/problem+json" }
-            };
+            return ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
         }
 
         return Ok(result.Value);

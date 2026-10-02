@@ -1,25 +1,31 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using NCUT_Market.Api.Configuration;
 using NCUT_Market.Api.Errors;
 using NCUT_Market.Core.Common;
 using NCUT_Market.Infrastructure;
+using NCUT_Market.Infrastructure.Security;
+using NCUT_Market.Infrastructure.Storage;
 using Scalar.AspNetCore;
 
 var dotEnv = DotEnvLoader.LoadFromRepositoryRoot();
 
-// A real environment variable outranks the value in .env. That is the conventional precedence — .env
-// is a local-development convenience, and a value exported in the shell or injected by a deployment
-// platform has to be able to override it. Getting this backwards is silent: WebApplicationOptions
-// .EnvironmentName overrides ASPNETCORE_ENVIRONMENT, so reading .env first would make
-// `$env:ASPNETCORE_ENVIRONMENT = 'Production'` do nothing at all, and the app would keep reporting
-// Development with no indication why.
+// Precedence, stated accurately: the environment NAME is resolved from real environment variables
+// first, but every other key ends up taking its value from .env. That is because the .env
+// dictionary is appended to the configuration as an in-memory source below, and a source added
+// later wins. So `$env:ConnectionStrings__DefaultConnection` does NOT override .env — only
+// ASPNETCORE_ENVIRONMENT / DOTNET_ENVIRONMENT do, because they are read explicitly here.
 //
-// The .env fallback is what lets `dotnet run` with no --launch-profile start in Development rather
-// than falling through to the host's own Production default. The two variable names and their order
-// mirror what the host would have consulted itself.
+// This is known and deliberate for now: .env is the single place local settings live, and moving a
+// deployment to real environment variables is a change for later. It is written down because it is
+// the opposite of what most .NET code does, and it is what forces the HTTP test factory to replace
+// the DbContext registration outright rather than setting a connection string.
 var environmentName =
     Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
     ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
@@ -32,6 +38,12 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 
 builder.Configuration.AddInMemoryCollection(dotEnv);
+
+// Uploaded images live under the content root, which resolves correctly in both layouts without a
+// candidate search: under `dotnet run` it is the project directory, and after `dotnet publish` it is
+// the publish output. `??=` leaves an explicit Storage__UploadRoot from configuration in place.
+builder.Configuration["Storage:UploadRoot"] ??=
+    Path.Combine(builder.Environment.ContentRootPath, "data", "uploads");
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -83,8 +95,23 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer();
+
+// Registered as an options configurator rather than configured inline, so the validation parameters
+// are built lazily from IOptions<JwtOptions> — see ConfigureJwtBearerOptions for why that matters.
+builder.Services.AddSingleton<IConfigureOptions<JwtBearerOptions>, ConfigureJwtBearerOptions>();
+
+builder.Services.AddAuthorization();
+
+// Replaces the framework's default, which answers a failed [Authorize] with a bare status code and
+// an empty body — no code, no traceId, nothing for the frontend's error card to render.
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationProblemHandler>();
+
 // Registered in every environment; only the document and UI endpoints below are Development-gated.
-builder.Services.AddOpenApi();
+// The transformer adds the bearer scheme, which is what gives the Scalar page a token field.
+builder.Services.AddOpenApi(options =>
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
 
 var app = builder.Build();
 
@@ -124,6 +151,41 @@ if (webRoot is not null)
     app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
 }
 
+// Uploaded product images, mounted from the same directory ImageStorage writes to. Kept separate
+// from the frontend mount above because the two have different lifetimes and different trust:
+// web/ is source that ships with the build, data/uploads is content users create at runtime.
+//
+// ServeUnknownFileTypes is left off, which is the meaningful default here. Every file is written by
+// ImageStorage with an extension it chose after decoding the bytes, so only .jpg/.png/.webp can
+// exist — but if one ever appeared with an extension the provider does not map, this refuses to
+// serve it rather than guessing a content type and handing the browser something executable.
+var uploadRoot = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value.UploadRoot;
+
+Directory.CreateDirectory(uploadRoot);
+
+// Logged because the root is derived from ContentRootPath by default but overridable from
+// configuration, and the two land in different places after a publish (see the ??= above). Without
+// this line the only way to find out which one won is to upload a file and go looking for it.
+app.Logger.LogInformation("Product images are served from {UploadRoot}", uploadRoot);
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadRoot),
+    RequestPath = app.Services.GetRequiredService<IOptions<StorageOptions>>().Value.PublicBasePath,
+
+    // Stops a browser from second-guessing the content type it was served. The files here are
+    // re-encoded images so there is nothing to sniff out, but the header is what makes that a
+    // property of the response rather than a hope about the bytes.
+    OnPrepareResponse = context =>
+        context.Context.Response.Headers["X-Content-Type-Options"] = "nosniff"
+});
+
+// Order matters: authentication establishes who is calling, authorization decides whether they may.
+// Both sit after UseExceptionHandler so an authentication failure still produces the problem+json
+// contract, and before the endpoints so every mapped route sees the principal.
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapControllers();
@@ -137,6 +199,13 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
     MapFaultInjectionEndpoints(app);
 }
+
+// Touches the bearer options once so a missing or malformed signing key fails here, at startup,
+// rather than on the first request that needs a token. JwtBearerOptions are otherwise built lazily,
+// and an API that boots happily and then refuses every login is a worse way to find out.
+//
+// This runs after builder.Build(), so a test host's PostConfigure<JwtOptions> has already applied.
+_ = app.Services.GetRequiredService<IOptions<JwtBearerOptions>>().Value;
 
 app.Run();
 
@@ -195,3 +264,11 @@ static Exception CreateInjectedException(string kind) => kind switch
     // The catch-all, so an unknown kind lands on INTERNAL_ERROR rather than 404.
     _ => new InvalidOperationException($"Injected: unexpected failure ({kind}).")
 };
+
+// Top-level statements compile the generated entry point into an INTERNAL Program class, which a
+// test project cannot name. This declaration — same assembly, same namespace — makes it public. It
+// adds no members and changes no behaviour; it exists so WebApplicationFactory<Program> resolves.
+//
+// It lives here rather than in its own file because this is where anyone looks when the test
+// project stops compiling.
+public partial class Program;

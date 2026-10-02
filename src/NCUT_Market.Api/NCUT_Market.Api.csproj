@@ -36,9 +36,7 @@
       file added *outside* these globs works in development and 404s in production. That is what the
       dotnet publish step in the verification checklist exists to catch.
     -->
-    <None Include="..\..\web\**\*"
-          Link="web\%(RecursiveDir)%(Filename)%(Extension)"
-          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\web\**\*" Link="web\%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +45,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.19">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

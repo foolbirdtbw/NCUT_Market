@@ -32,6 +32,28 @@ public static class ErrorCodes
 
     public const string Conflict = "CONFLICT";
 
+    /// <summary>
+    /// The credentials were well-formed but wrong — an unknown username or a bad password.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately distinct from <see cref="Unauthorized"/>, which means "no valid token on the
+    /// request at all". A login attempt that fails and a request carrying an expired token are
+    /// different problems with different fixes, and a client that cannot tell them apart will show
+    /// "please log in again" to someone who never was logged in.
+    /// </remarks>
+    public const string InvalidCredentials = "INVALID_CREDENTIALS";
+
+    /// <summary>
+    /// The action is not legal for the resource's current state — publishing a sold listing,
+    /// deleting a published one.
+    /// </summary>
+    /// <remarks>
+    /// Carried on a 409 alongside <see cref="Conflict"/>, which it refines: 409 says "the request
+    /// conflicts with the current state", and this says specifically that the state machine, rather
+    /// than a uniqueness constraint, is what refused it.
+    /// </remarks>
+    public const string InvalidState = "INVALID_STATE";
+
     public const string UnsupportedMediaType = "UNSUPPORTED_MEDIA_TYPE";
 
     public const string InternalError = "INTERNAL_ERROR";
