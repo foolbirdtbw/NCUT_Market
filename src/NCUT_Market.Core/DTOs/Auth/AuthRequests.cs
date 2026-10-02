@@ -21,15 +21,26 @@ namespace NCUT_Market.Core.DTOs.Auth;
 /// with "validation metadata defined on property ... will be ignored", which surfaces as a 500 on
 /// every write endpoint rather than as a validation error.
 /// </para>
+/// <para>
+/// The messages are written out rather than left to the default DataAnnotations text, which is
+/// English and phrased for a developer ("The field Password must be a string with a minimum
+/// length of..."). These strings are shown verbatim under the form that produced them.
+/// </para>
 /// </remarks>
 public sealed record RegisterRequest(
-    [param: Required, StringLength(50, MinimumLength = 3)] string Username,
-    [param: Required, StringLength(128, MinimumLength = 6)] string Password,
-    [param: Required, StringLength(50, MinimumLength = 1)] string Nickname);
+    [param: Required(ErrorMessage = "请填用户名。")]
+    [param: StringLength(50, MinimumLength = 3, ErrorMessage = "用户名长度要在 3 到 50 个字符之间。")]
+    string Username,
+    [param: Required(ErrorMessage = "请填密码。")]
+    [param: StringLength(128, MinimumLength = 6, ErrorMessage = "密码长度要在 6 到 128 个字符之间。")]
+    string Password,
+    [param: Required(ErrorMessage = "请填昵称。")]
+    [param: StringLength(50, MinimumLength = 1, ErrorMessage = "昵称最多 50 个字符。")]
+    string Nickname);
 
 /// <summary>Credentials for an existing account.</summary>
 /// <param name="Username">Login name.</param>
 /// <param name="Password">Plain text.</param>
 public sealed record LoginRequest(
-    [param: Required] string Username,
-    [param: Required] string Password);
+    [param: Required(ErrorMessage = "请填用户名。")] string Username,
+    [param: Required(ErrorMessage = "请填密码。")] string Password);

@@ -12,9 +12,32 @@ window.api = (function ($) {
     return window.auth ? window.auth.token() : null;
   }
 
+  /* 校验失败（400 VALIDATION_ERROR）没有 detail，原因在 errors 里，键是字段名。
+   * 不取它的话，密码填短了看到的是 "One or more validation errors occurred."——
+   * 既没说是哪个字段，也没说错在哪，等于没说。 */
+  function validationMessages(problem) {
+    var errors = problem.errors;
+    var messages = [];
+
+    if (errors) {
+      Object.keys(errors).forEach(function (field) {
+        (errors[field] || []).forEach(function (text) {
+          messages.push(text);
+        });
+      });
+    }
+
+    return messages;
+  }
+
   function toError(xhr) {
     var problem = xhr.responseJSON || {};
-    var error = new Error(problem.detail || problem.title || "请求失败（HTTP " + xhr.status + "）");
+    var messages = validationMessages(problem);
+    var error = new Error(
+      problem.detail ||
+      (messages.length ? messages.join(" ") : "") ||
+      problem.title ||
+      "请求失败（HTTP " + xhr.status + "）");
 
     error.status = xhr.status;
     error.code = problem.code;
