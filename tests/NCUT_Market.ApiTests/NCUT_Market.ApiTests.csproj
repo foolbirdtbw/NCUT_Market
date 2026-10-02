@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Request-level tests, separate from NCUT_Market.IntegrationTests on purpose.
+
+    That project drives AppDbContext directly against a shared database and declares
+    DisableParallelization for the whole assembly, which is the right shape for fixtures that write
+    rows and never clean up. These tests go over HTTP and should be free to run in parallel, and
+    they need a reference to the web project that the DbContext-level project has no business
+    carrying. Two projects, two collections, no interference.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NCUT_Market.Api\NCUT_Market.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!--
+    Serialized deliberately. Each test class owns its own WebApplicationFactory, so running classes
+    in parallel means several in-process API hosts, each with its own DbContext pool, alive at once.
+    They would also be writing to the same database, where several tables carry unique indexes —
+    the DbContext-level test project disables parallelization for the same reason.
+
+    The practical forcing function is smaller: the development machine has 8 GB of RAM and the test
+    hosts plus a build were enough to trip OutOfMemoryException.
+  -->
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
