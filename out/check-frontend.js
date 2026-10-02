@@ -11,10 +11,104 @@ const path = require("path");
 
 const root = path.join(__dirname, "..", "web", "js");
 
-const sources = {
-  "ui.js": fs.readFileSync(path.join(root, "ui.js"), "utf8"),
-  "app.js": fs.readFileSync(path.join(root, "app.js"), "utf8")
-};
+// 每个文件都要读：下面那道"未声明就赋值"的检查是逐文件做的。
+const files = ["ui.js", "auth.js", "api.js", "products.js", "app.js"];
+
+const sources = {};
+
+for (const file of files) {
+  sources[file] = fs.readFileSync(path.join(root, file), "utf8");
+}
+
+/* 把注释和字符串字面量抹掉，只留代码骨架。
+ *
+ * 不这么做的话，注释里出现的等号会被当成赋值——这个文件顶上就写着
+ * "out/ 是构建产物" 之类带英文等号的说明，误报会多到没法看。 */
+function stripCommentsAndStrings(source) {
+  let out = "";
+  let i = 0;
+
+  while (i < source.length) {
+    const pair = source.substr(i, 2);
+
+    if (pair === "//") {
+      while (i < source.length && source[i] !== "\n") i++;
+      continue;
+    }
+
+    if (pair === "/*") {
+      i += 2;
+      while (i < source.length && source.substr(i, 2) !== "*/") i++;
+      i += 2;
+      continue;
+    }
+
+    const c = source[i];
+
+    if (c === '"' || c === "'" || c === "`") {
+      i++;
+      while (i < source.length && source[i] !== c) {
+        i += source[i] === "\\" ? 2 : 1;
+      }
+      i++;
+      out += '""';
+      continue;
+    }
+
+    out += c;
+    i++;
+  }
+
+  return out;
+}
+
+/* 找出"赋了值但从没声明"的标识符。
+ *
+ * 每个文件都是 "use strict" 的 IIFE，所以这不是风格问题：读或写一个没声明的名字
+ * 会抛 ReferenceError。auth.js 里 pendingHash 就这样漏过一次——它在登录成功的回调
+ * 和 401 的处理里各出现一次，抛出去的表现是"点了按钮没反应"，而且没有任何测试
+ * 覆盖到，因为这里只测纯函数。
+ *
+ * 规则收得很紧，宁可漏报也不要误报：只认前面不是 . 也不是 $ 的裸标识符，
+ * 声明来源包括 var/let/const/function 以及函数参数和 catch 绑定。
+ * 右边是 => 的（箭头函数的参数）和 == / != 之类都排除掉。 */
+function findUndeclaredAssignments(source) {
+  const code = stripCommentsAndStrings(source);
+
+  const declared = new Set();
+
+  for (const m of code.matchAll(/\b(?:var|let|const|function)\s+([A-Za-z_$][\w$]*)/g)) {
+    declared.add(m[1]);
+  }
+
+  // 函数参数。写成 (a, b) 或 (a, b = 1) 都算声明。
+  for (const m of code.matchAll(/\bfunction\s*[A-Za-z_$\w]*\s*\(([^)]*)\)/g)) {
+    for (const part of m[1].split(",")) {
+      const name = part.split("=")[0].trim();
+
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name);
+    }
+  }
+
+  // catch (e) 和 for (const x of ...) 里的 const 已经被上面覆盖，catch 没有。
+  for (const m of code.matchAll(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g)) {
+    declared.add(m[1]);
+  }
+
+  const offenders = [];
+
+  for (const m of code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*=(?!=)/g)) {
+    const name = m[1];
+
+    if (!declared.has(name) && !offenders.includes(name)) {
+      offenders.push(name);
+    }
+  }
+
+  return offenders;
+}
+
+/* 这段的执行放在文件末尾：check 和 failures 都在下面，在它们之前调用会撞上 TDZ。 */
 
 /** 扫到与起始括号配对的收尾字符，返回这一段源码。 */
 function scan(source, start, open, close) {
@@ -246,6 +340,12 @@ check(
   treeHtml([{ id: 1, name: '<script>x</script>', parentId: null }], null, 0).includes("&lt;script&gt;"),
   true
 );
+
+console.log("\n未声明就赋值的标识符（use strict 下会抛 ReferenceError）");
+
+for (const file of files) {
+  check(file, findUndeclaredAssignments(sources[file]), []);
+}
 
 console.log(
   failures === 0

@@ -10,6 +10,12 @@ window.auth = (function ($) {
   var TOKEN_KEY = "ncut.token";
   var USER_KEY = "ncut.user";
 
+  /* token 过期时想去、但被拦下来的那个地址，登录成功后送回去。
+   * 必须在这里声明：整个文件是 "use strict"，漏了 var 的话赋值和读取都会抛
+   * ReferenceError——而这两处一个在登录成功的回调里、一个在 401 的处理里，
+   * 抛出去的表现是"按钮点了没反应"，最难查的那种。 */
+  var pendingHash = null;
+
   /* localStorage 在隐私模式或被禁 cookie 时会直接抛异常，不是返回 null。
    * 整站不能因为读不到一个 token 就白屏，所以每次访问都包起来。 */
   function readToken() {
