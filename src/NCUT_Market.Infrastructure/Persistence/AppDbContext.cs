@@ -20,6 +20,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<Announcement> Announcements => Set<Announcement>();
 
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+
+    public DbSet<Message> Messages => Set<Message>();
+
     /// <summary>
     /// "Now" for every audit timestamp this context writes, expressed in Beijing time.
     /// </summary>

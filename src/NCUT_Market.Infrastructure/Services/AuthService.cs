@@ -111,7 +111,7 @@ internal sealed class AuthService(
         var user = await dbContext.Users
             .AsNoTracking()
             .Where(x => x.Id == userId && x.Status == UserStatus.Active)
-            .Select(x => new CurrentUserResponse(x.Id, x.Username, x.Nickname))
+            .Select(x => new CurrentUserResponse(x.Id, x.Username, x.Nickname, x.Role))
             .FirstOrDefaultAsync(cancellationToken);
 
         return user is null
@@ -172,6 +172,6 @@ internal sealed class AuthService(
         return new AuthResponse(
             new JwtSecurityTokenHandler().WriteToken(token),
             expiresAtBeijing,
-            new CurrentUserResponse(user.Id, user.Username, user.Nickname));
+            new CurrentUserResponse(user.Id, user.Username, user.Nickname, user.Role));
     }
 }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NCUT_Market.Core.DTOs.Auth;
 using NCUT_Market.Core.Entities;
+using NCUT_Market.Core.Enums;
 using NCUT_Market.Infrastructure.Persistence;
 using NCUT_Market.Infrastructure.Security;
 using NCUT_Market.Infrastructure.Storage;
@@ -210,6 +211,66 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
         }
 
         DormitoryAreaId = area.Id;
+    }
+
+    /// <summary>
+    /// Grants an account the admin role, the way an operator would: directly in the database.
+    /// </summary>
+    /// <param name="userId">The account to promote.</param>
+    /// <remarks>
+    /// There is no endpoint for this, and there is deliberately not meant to be one — promoting an
+    /// account in production is a hand-run UPDATE, so the tests do the same rather than exercising a
+    /// path that does not exist. Writing through the change tracker rather than
+    /// <c>ExecuteUpdateAsync</c> keeps the audit stamping intact, which the bulk API would bypass.
+    /// </remarks>
+    public async Task PromoteToAdminAsync(long userId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var user = await dbContext.Users.FirstAsync(x => x.Id == userId);
+        user.Role = UserRole.Admin;
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Writes an announcement row directly, for the states the API cannot produce.
+    /// </summary>
+    /// <param name="title">Headline. Give it a unique value — the tests assert on the title.</param>
+    /// <param name="status">Lifecycle state.</param>
+    /// <param name="publishedAt">When it went live, or null for never.</param>
+    /// <param name="expiredAt">When it stops showing, or null for never.</param>
+    /// <returns>The new row's id.</returns>
+    /// <remarks>
+    /// The API only ever publishes immediately, so drafts, future-dated rows and already-expired ones
+    /// have to be planted to test the "live" filter at all. Timestamps are passed in as Beijing
+    /// wall-clock, the same convention the columns hold.
+    /// </remarks>
+    public async Task<long> SeedAnnouncementAsync(
+        string title,
+        AnnouncementStatus status,
+        DateTime? publishedAt,
+        DateTime? expiredAt)
+    {
+        await using var scope = Services.CreateAsyncScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var announcement = new Announcement
+        {
+            Title = title,
+            Content = title + " 的正文",
+            Status = status,
+            PublishedAt = publishedAt,
+            ExpiredAt = expiredAt
+        };
+
+        dbContext.Announcements.Add(announcement);
+        await dbContext.SaveChangesAsync();
+
+        return announcement.Id;
     }
 
     /// <summary>

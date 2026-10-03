@@ -16,6 +16,9 @@
     [/^\/products\/(\d+)\/edit$/, function (match) { products.showEdit(match[1]); }],
     [/^\/products\/(\d+)$/, function (match) { products.showDetail(match[1]); }],
     [/^\/mine$/, function (match, query) { products.showMine(query); }],
+    [/^\/messages$/, function (match, query) { messages.showList(query); }],
+    [/^\/messages\/(\d+)$/, function (match, query) { messages.showThread(match[1], query); }],
+    [/^\/announcements$/, function (match, query) { announcements.showList(query); }],
     [/^\/login$/, function () { auth.showLogin(); }],
     [/^\/register$/, function () { auth.showRegister(); }],
     [/^\/categories$/, function () { showCategories(); }],
@@ -234,6 +237,23 @@
     .on("click", "[data-action='upload-image']", function () { products.uploadImage(); })
     .on("click", "[data-action='delete-image']", function () {
       products.deleteImage($(this).attr("data-image-id"));
+    })
+    .on("click", "[data-action='contact-seller']", function () {
+      messages.start($(this).attr("data-product-id"));
+    })
+    .on("submit", "#message-form", function (event) {
+      event.preventDefault();
+      messages.send();
+    })
+    .on("submit", "#announcement-form", function (event) {
+      event.preventDefault();
+      announcements.submitPublish();
+    })
+    .on("click", "[data-action='announcement-dismiss']", function () {
+      announcements.dismiss($(this).attr("data-announcement-id"));
+    })
+    .on("click", "[data-action='delete-announcement']", function () {
+      announcements.deleteAnnouncement($(this).attr("data-announcement-id"));
     });
 
   /* 编辑表单提交时要知道改的是哪个 id。事件是委托的，处理函数不在渲染时的闭包里，
@@ -248,6 +268,12 @@
 
   $(function () {
     paintThemeButton();
+
+    /* 未读徽标跟着登录状态走。注册这一个回调就够：下面的 auth.refresh() 会走 paint()，
+     * 之后的登录、退出也都走同一处。 */
+    auth.onUserChanged(messages.refreshUnread);
+
+    announcements.refreshBar();
 
     // 本地缓存的用户信息可能过期（比如 token 还在但账号被停用了），
     // 首屏先按缓存渲染，然后向服务端核一次。

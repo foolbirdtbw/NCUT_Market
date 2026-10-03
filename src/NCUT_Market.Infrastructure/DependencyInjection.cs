@@ -44,6 +44,8 @@ public static class DependencyInjection
         services.AddScoped<IDormitoryAreaService, DormitoryAreaService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IProductService, ProductService>();
+        services.AddScoped<IConversationService, ConversationService>();
+        services.AddScoped<IAnnouncementService, AnnouncementService>();
 
         return services;
     }

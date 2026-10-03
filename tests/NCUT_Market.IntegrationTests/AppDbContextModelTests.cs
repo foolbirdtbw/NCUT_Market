@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using NCUT_Market.Core.Entities;
+using NCUT_Market.Core.Enums;
 using NCUT_Market.Infrastructure.Persistence;
 
 namespace NCUT_Market.IntegrationTests;
@@ -24,7 +25,7 @@ public sealed class AppDbContextModelTests
     }
 
     [Fact]
-    public void Model_contains_exactly_the_seven_designed_tables()
+    public void Model_contains_exactly_the_nine_designed_tables()
     {
         using var context = CreateContext();
 
@@ -40,7 +41,9 @@ public sealed class AppDbContextModelTests
             {
                 "announcements",
                 "categories",
+                "conversations",
                 "dormitory_areas",
+                "messages",
                 "notifications",
                 "product_images",
                 "products",
@@ -124,5 +127,129 @@ public sealed class AppDbContextModelTests
             .ToArray();
 
         Assert.Contains("idx_products_status_last_activity_at", indexNames);
+    }
+
+    /// <summary>
+    /// The decision this stage was most likely to get wrong, and the one a later edit would silently
+    /// flip: deleting a listing must not delete the buyer's side of the conversation.
+    /// </summary>
+    [Fact]
+    public void Conversation_to_product_is_set_null_so_threads_outlive_a_deleted_listing()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Conversation))!;
+
+        var foreignKey = entity.GetForeignKeys()
+            .Single(x => x.PrincipalEntityType.ClrType == typeof(Product));
+
+        Assert.Equal(DeleteBehavior.SetNull, foreignKey.DeleteBehavior);
+
+        // Nullable, or SET NULL would be rejected by the schema itself.
+        Assert.True(foreignKey.Properties.Single().IsNullable);
+    }
+
+    [Fact]
+    public void Conversation_to_user_foreign_keys_are_restrict()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Conversation))!;
+
+        var behaviours = entity.GetForeignKeys()
+            .Where(x => x.PrincipalEntityType.ClrType == typeof(User))
+            .Select(x => x.DeleteBehavior)
+            .ToArray();
+
+        // Buyer and seller, both Restrict — an accidental Cascade onto users would be caught here.
+        Assert.Equal(2, behaviours.Length);
+        Assert.All(behaviours, x => Assert.Equal(DeleteBehavior.Restrict, x));
+    }
+
+    [Fact]
+    public void Message_to_conversation_is_cascade_and_to_user_is_restrict()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Message))!;
+
+        Assert.Equal(
+            DeleteBehavior.Cascade,
+            entity.GetForeignKeys()
+                .Single(x => x.PrincipalEntityType.ClrType == typeof(Conversation))
+                .DeleteBehavior);
+
+        Assert.Equal(
+            DeleteBehavior.Restrict,
+            entity.GetForeignKeys()
+                .Single(x => x.PrincipalEntityType.ClrType == typeof(User))
+                .DeleteBehavior);
+    }
+
+    [Fact]
+    public void Conversation_columns_are_snake_cased()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Conversation))!;
+
+        Assert.Equal("product_id", entity.FindProperty(nameof(Conversation.ProductId))!.GetColumnName());
+        Assert.Equal("product_title", entity.FindProperty(nameof(Conversation.ProductTitle))!.GetColumnName());
+        Assert.Equal("buyer_id", entity.FindProperty(nameof(Conversation.BuyerId))!.GetColumnName());
+        Assert.Equal("seller_id", entity.FindProperty(nameof(Conversation.SellerId))!.GetColumnName());
+        Assert.Equal("last_message_at", entity.FindProperty(nameof(Conversation.LastMessageAt))!.GetColumnName());
+        Assert.Equal(
+            "buyer_last_read_at",
+            entity.FindProperty(nameof(Conversation.BuyerLastReadAt))!.GetColumnName());
+        Assert.Equal(
+            "seller_last_read_at",
+            entity.FindProperty(nameof(Conversation.SellerLastReadAt))!.GetColumnName());
+    }
+
+    [Fact]
+    public void Conversation_has_a_unique_index_per_listing_and_buyer()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Conversation))!;
+
+        var indexNames = entity.GetIndexes()
+            .Select(x => x.GetDatabaseName())
+            .OfType<string>()
+            .ToArray();
+
+        Assert.Contains("uk_conversations_product_id_buyer_id", indexNames);
+        Assert.Contains("idx_conversations_buyer_id_last_message_at", indexNames);
+        Assert.Contains("idx_conversations_seller_id_last_message_at", indexNames);
+    }
+
+    [Fact]
+    public void Messages_has_a_conversation_id_index()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Message))!;
+
+        var indexNames = entity.GetIndexes()
+            .Select(x => x.GetDatabaseName())
+            .OfType<string>()
+            .ToArray();
+
+        Assert.Contains("idx_messages_conversation_id_id", indexNames);
+    }
+
+    [Fact]
+    public void Message_content_is_capped_at_500()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(Message))!;
+
+        Assert.Equal(500, entity.FindProperty(nameof(Message.Content))!.GetMaxLength());
+    }
+
+    [Fact]
+    public void Users_role_is_tinyint_unsigned_defaulting_to_the_ordinary_role()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(User))!;
+
+        var role = entity.FindProperty(nameof(User.Role))!;
+
+        Assert.Equal("tinyint unsigned", role.GetColumnType());
+        Assert.Equal(UserRole.User, role.GetDefaultValue());
     }
 }

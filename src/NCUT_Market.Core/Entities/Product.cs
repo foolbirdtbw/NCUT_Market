@@ -47,4 +47,11 @@ public sealed class Product : IHasCreatedAt, IHasUpdatedAt
     public ICollection<ProductImage> Images { get; } = [];
 
     public ICollection<Notification> Notifications { get; } = [];
+
+    /// <summary>
+    /// Threads opened about this listing. They outlive it: the foreign key is SET NULL, so deleting
+    /// the product leaves the conversations behind with their title frozen. See
+    /// <see cref="Conversation"/>.
+    /// </summary>
+    public ICollection<Conversation> Conversations { get; } = [];
 }

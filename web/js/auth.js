@@ -10,6 +10,15 @@ window.auth = (function ($) {
   var TOKEN_KEY = "ncut.token";
   var USER_KEY = "ncut.user";
 
+  /* 登录状态一变就要跟着动的地方（未读徽标是第一个）。
+   * 三条路都会经过 paint()——signIn、signOut、refresh——所以通知挂在它开头，
+   * 不在那三处各写一遍：漏一处就是一处不同步，而且很难发现。 */
+  var listeners = [];
+
+  function onUserChanged(callback) {
+    listeners.push(callback);
+  }
+
   /* token 过期时想去、但被拦下来的那个地址，登录成功后送回去。
    * 必须在这里声明：整个文件是 "use strict"，漏了 var 的话赋值和读取都会抛
    * ReferenceError——而这两处一个在登录成功的回调里、一个在 401 的处理里，
@@ -108,6 +117,10 @@ window.auth = (function ($) {
   /* ---------- 顶栏用户区 ---------- */
 
   function paint() {
+    /* 先通知，再管顶栏那块。顶栏元素不在页面上时就提前返回了，
+     * 通知写在后面的话会跟着一起被跳过。 */
+    listeners.forEach(function (callback) { callback(); });
+
     var slot = $("#auth-slot");
 
     if (!slot.length) {
@@ -232,6 +245,7 @@ window.auth = (function ($) {
     token: token,
     user: user,
     isSignedIn: isSignedIn,
+    onUserChanged: onUserChanged,
     signIn: signIn,
     signOut: signOut,
     expire: expire,

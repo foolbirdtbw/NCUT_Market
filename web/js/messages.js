@@ -1,0 +1,232 @@
+/* 私信：会话列表、会话详情、发消息、顶栏未读徽标。
+ *
+ * 会话一定挂在某个商品上，所以「联系卖家」的入口在商品详情页，不在这里。
+ * 视图整块用 .html() 重建，事件一律委托在 document 上绑一次（在 app.js 里）。 */
+window.messages = (function ($) {
+  "use strict";
+
+  var NM = window.NM;
+
+  var PAGE_SIZE = 20;
+
+  /* ---------- 顶栏未读徽标 ---------- */
+
+  function paintBadge(count) {
+    var slot = $("#nav-messages");
+
+    if (!slot.length) {
+      return;
+    }
+
+    slot.find(".nav-badge").remove();
+
+    if (count > 0) {
+      // 三位数以上就封顶，徽标是提示不是计数器，撑宽了会把导航挤歪。
+      slot.append('<span class="nav-badge">' + (count > 99 ? "99+" : count) + '</span>');
+    }
+  }
+
+  /* 未读数的刷新点。挂在 auth.onUserChanged 上（在 app.js 里注册），
+   * 所以 signIn / signOut / refresh 三条路都会经过这里，不用各写一遍。 */
+  function refreshUnread() {
+    if (!auth.isSignedIn()) {
+      paintBadge(0);
+      return;
+    }
+
+    api.get("/api/conversations/unread-count").then(function (result) {
+      paintBadge(result.count);
+    }, function () {
+      // 徽标拉不到就当没有未读。它为这一个数字弹一张错误卡，是把提示做成了障碍。
+      paintBadge(0);
+    });
+  }
+
+  /* ---------- 会话列表 ---------- */
+
+  /* 头像位置放昵称首字。没有真头像可传，纯 CSS 圆片比一个默认图省一次请求。 */
+  function avatarHtml(nickname) {
+    return '<span class="conv-avatar">' + NM.esc(String(nickname || "?").charAt(0)) + '</span>';
+  }
+
+  function rowHtml(item) {
+    return '<a class="conv-item' + (item.hasUnread ? " is-unread" : "") +
+      '" href="#/messages/' + item.id + '">' +
+      avatarHtml(item.peerNickname) +
+      '<span class="conv-main">' +
+      '<span class="conv-title">' + NM.esc(item.peerNickname) + '</span>' +
+      '<span class="conv-preview">' +
+      NM.esc(item.lastMessagePreview || "还没有消息。") + '</span>' +
+      '<span class="conv-product">' + NM.esc(item.productTitle) + '</span>' +
+      '</span>' +
+      '<span class="conv-meta">' + NM.formatDateTime(item.lastMessageAt) + '</span>' +
+      '</a>';
+  }
+
+  function showList(query) {
+    $("#view").html(
+      '<div class="card">' +
+      '<div class="card-head"><h2>私信</h2>' +
+      '<button class="button" data-reload>刷新</button></div>' +
+      '<div id="conv-list">' + NM.loading() + '</div>' +
+      '</div>');
+
+    api.get("/api/conversations", {
+      page: query.page || 1,
+      pageSize: PAGE_SIZE
+    }).then(function (page) {
+      if (!page.items.length) {
+        $("#conv-list").html(NM.empty("还没有会话。在商品详情页点「联系卖家」就能开一个。"));
+        return;
+      }
+
+      $("#conv-list").html(
+        '<div class="conv-list">' + page.items.map(rowHtml).join("") + '</div>' +
+        NM.pagerHtml(page, function (target) { return "#/messages?page=" + target; }));
+    }, function (error) {
+      $("#conv-list").html(NM.errorCard(error));
+    });
+  }
+
+  /* ---------- 会话详情 ---------- */
+
+  /* 当前会话的 id。从 hash 里现读，不靠闭包——事件是委托的，
+   * 处理函数不记得是哪个页面渲染的它。 */
+  function currentThreadId() {
+    var match = /^#\/messages\/(\d+)/.exec(location.hash);
+
+    return match ? match[1] : null;
+  }
+
+  function headHtml(detail) {
+    /* 商品被删掉之后 productId 是 null，标题用的是建会话时冻结下来的那份。
+     * 这时候不给链接——跳过去只会看到 404。 */
+    var product = detail.productId
+      ? '<a href="#/products/' + detail.productId + '">' + NM.esc(detail.productTitle) + '</a>'
+      : NM.esc(detail.productTitle) + '<span class="muted"> · 商品已删除</span>';
+
+    return '<div class="card thread-head">' +
+      (detail.productThumbnailUrl
+        ? '<img class="thread-thumb" src="' + NM.esc(detail.productThumbnailUrl) + '" alt="">'
+        : '') +
+      '<div class="thread-head-main">' +
+      '<div class="thread-peer">' + NM.esc(detail.peerNickname) + '</div>' +
+      '<div class="thread-product">' + product + '</div>' +
+      '</div>' +
+      '<a class="button" href="#/messages">返回列表</a>' +
+      '</div>';
+  }
+
+  function messageHtml(message, myId) {
+    var mine = message.senderId === myId;
+
+    return '<div class="bubble ' + (mine ? "bubble-mine" : "bubble-peer") + '">' +
+      // 换行交给 CSS 的 white-space: pre-wrap，不在这里替成 <br>——
+      // 替了就等于把用户输入又拼进了一次 HTML。
+      '<div class="bubble-text">' + NM.esc(message.content) + '</div>' +
+      '<div class="bubble-meta">' +
+      (mine ? "" : NM.esc(message.senderNickname) + " · ") +
+      NM.formatDateTime(message.createdAt) + '</div>' +
+      '</div>';
+  }
+
+  function showThread(id, query) {
+    $("#view").html(NM.loading());
+
+    api.get("/api/conversations/" + id, {
+      page: query.page || 1,
+      pageSize: PAGE_SIZE
+    }).then(function (detail) {
+      var myId = (auth.user() || {}).id;
+      var messages = detail.messages;
+
+      $("#view").html(
+        headHtml(detail) +
+        '<div class="card">' +
+        '<div class="thread-messages" id="thread-messages">' +
+        (messages.items.length
+          ? messages.items.map(function (message) { return messageHtml(message, myId); }).join("")
+          : NM.empty("还没有消息。打个招呼吧。")) +
+        '</div>' +
+        /* 接口给的是最新一页。往上翻旧消息这一轮不做，但要说明白少了什么，
+         * 不能让一页只显示 20 条而看起来像全部。 */
+        (messages.totalPages > 1
+          ? '<p class="muted thread-more">只显示了最近 ' + messages.items.length +
+            ' 条，这个会话共 ' + messages.totalCount + ' 条。</p>'
+          : '') +
+        '<form id="message-form" class="thread-form">' +
+        '<textarea id="message-input" rows="2" maxlength="500" ' +
+        'placeholder="写点什么…（最多 500 字）"></textarea>' +
+        '<button class="button button-primary" type="submit">发送</button>' +
+        '</form>' +
+        '<div id="message-error"></div>' +
+        '</div>');
+
+      scrollToBottom();
+
+      // 打开即算读过。服务端只盖章自己那一侧，不会替对方已读。
+      markRead(id);
+    }, function (error) {
+      $("#view").html(NM.errorCard(error));
+    });
+  }
+
+  function scrollToBottom() {
+    var box = $("#thread-messages");
+
+    if (box.length) {
+      box.scrollTop(box[0].scrollHeight);
+    }
+  }
+
+  function markRead(id) {
+    api.post("/api/conversations/" + id + "/read", null).then(function () {
+      refreshUnread();
+    }, function () {
+      // 盖章失败不影响正在看的这一页，只是徽标会多留一会儿。
+    });
+  }
+
+  function send() {
+    var id = currentThreadId();
+    var content = $("#message-input").val().trim();
+
+    if (!content) {
+      $("#message-error").html(NM.inlineError({ message: "请写点什么。" }));
+      return;
+    }
+
+    $("#message-error").empty();
+
+    api.post("/api/conversations/" + id + "/messages", { content: content }).then(function () {
+      // 重新拉一次详情，而不是把返回值追加进 DOM——和服务端状态对齐的唯一做法。
+      showThread(id, {});
+      refreshUnread();
+    }, function (error) {
+      $("#message-error").html(NM.inlineError(error));
+    });
+  }
+
+  /* ---------- 从商品详情页开一个会话 ---------- */
+
+  /* 接口是 find-or-create 的，所以重复点「联系卖家」不会开出第二个会话，
+   * 只是回到原来那个。 */
+  function start(productId) {
+    $("#detail-error").html(NM.loading());
+
+    api.post("/api/conversations", { productId: Number(productId) }).then(function (conversation) {
+      location.hash = "#/messages/" + conversation.id;
+    }, function (error) {
+      // 联系自己的商品、或者商品已经看不见了，中文原因都在这里。
+      $("#detail-error").html(NM.inlineError(error));
+    });
+  }
+
+  return {
+    showList: showList,
+    showThread: showThread,
+    send: send,
+    start: start,
+    refreshUnread: refreshUnread
+  };
+})(jQuery);

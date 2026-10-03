@@ -12,7 +12,7 @@ const path = require("path");
 const root = path.join(__dirname, "..", "web", "js");
 
 // 每个文件都要读：下面那道"未声明就赋值"的检查是逐文件做的。
-const files = ["ui.js", "auth.js", "api.js", "products.js", "app.js"];
+const files = ["ui.js", "auth.js", "api.js", "products.js", "messages.js", "announcements.js", "app.js"];
 
 const sources = {};
 

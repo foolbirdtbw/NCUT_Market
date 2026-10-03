@@ -232,6 +232,15 @@ window.products = (function ($) {
       '<div id="detail-action-status"></div>';
   }
 
+  /* 别人看商品时的那个按钮。会话挂在商品上，所以私信的入口在这里，
+   * 私信页里没有「新建会话」——卖家只能回，不能主动开。 */
+  function contactHtml(product) {
+    return '<div class="action-bar">' +
+      '<button class="button button-primary" data-action="contact-seller" ' +
+      'data-product-id="' + product.id + '">联系卖家</button>' +
+      '</div>';
+  }
+
   function detailHtml(product, isOwner) {
     return '<div class="card">' +
       '<div class="card-head">' +
@@ -251,7 +260,7 @@ window.products = (function ($) {
       (product.soldAt ? '<span>售出于：' + NM.formatDateTime(product.soldAt) + '</span>' : '') +
       '</div>' +
       galleryHtml(product, isOwner) +
-      (isOwner ? ownerActionsHtml(product) : '') +
+      (isOwner ? ownerActionsHtml(product) : contactHtml(product)) +
       '<p id="detail-error"></p>' +
       '</div>';
   }

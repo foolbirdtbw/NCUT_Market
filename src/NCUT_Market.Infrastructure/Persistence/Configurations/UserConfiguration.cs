@@ -22,6 +22,13 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasColumnType("tinyint unsigned")
             .HasDefaultValue(UserStatus.Active)
             .HasSentinel((UserStatus)0);
+        // Same shape as Status, and for the same reason: the enum starts at 1, so 0 is never a
+        // legitimate value and the column default applies only when Role was genuinely left unset.
+        builder.Property(x => x.Role)
+            .HasConversion<byte>()
+            .HasColumnType("tinyint unsigned")
+            .HasDefaultValue(UserRole.User)
+            .HasSentinel((UserRole)0);
         builder.Property(x => x.CreatedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.UpdatedAt).HasColumnType("datetime(3)");
 
