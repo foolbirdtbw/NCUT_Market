@@ -480,9 +480,11 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
 /* ---------- 筛选栏 ---------- */
 
+/* 关键词 / 分类 / 宿舍楼 / 成色 / 排序 / 最低价 / 最高价 / 搜索。
+   窄屏那个媒体查询把它压成两列再让搜索框和按钮各占满一行，所以加一列不用改那边。 */
 .filter-bar {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 7rem 7rem auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 7rem 7rem auto;
   gap: 6px;
   align-items: center;
   margin-bottom: 12px;
@@ -741,7 +743,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   .pager-actions .button { flex: 1; }
   .tree-child { margin-left: 8px; padding-left: 8px; }
 
-  /* 单列，不然七个筛选项挤成一条看不见的东西。 */
+  /* 单列，不然八个筛选项挤成一条看不见的东西。 */
   .filter-bar { grid-template-columns: 1fr 1fr; }
   .filter-bar input[type="search"] { grid-column: 1 / -1; }
   .filter-bar .button { grid-column: 1 / -1; }

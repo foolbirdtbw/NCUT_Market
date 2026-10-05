@@ -93,6 +93,7 @@ window.products = (function ($) {
       '<form id="search-form" class="filter-bar">' +
       '<input type="search" id="filter-q" placeholder="搜索标题或描述" value="' + NM.esc(query.q || "") + '">' +
       '<select id="filter-category"><option value="">全部分类</option></select>' +
+      '<select id="filter-area"><option value="">全部宿舍楼</option></select>' +
       '<select id="filter-condition"><option value="">全部成色</option>' +
       NM.conditionOptions(query.condition ? Number(query.condition) : 0) + '</select>' +
       '<select id="filter-sort">' +
@@ -112,9 +113,16 @@ window.products = (function ($) {
     // 成色下拉的"全部"是空值，它和 conditionOptions 拼在一起，所以选中项要单独设。
     $("#filter-condition").val(query.condition || "");
 
+    /* 两个下拉都是「先补选项、再设选中」。选中必须在 append 之后用 .val() 设：
+     * areaOptions / categoryOptions 拿 selected 参数比的是 ===，而 query 里读出来的是
+     * 字符串、item.id 是数字，永远匹配不上。占位项（全部分类 / 全部宿舍楼）是手写的
+     * ——那两个函数不生成占位项。 */
     loadDictionaries().then(function (data) {
       $("#filter-category").append(NM.categoryOptions(data.categories, null));
       $("#filter-category").val(query.categoryId || "");
+
+      $("#filter-area").append(NM.areaOptions(data.areas, null));
+      $("#filter-area").val(query.areaId || "");
     }, function () {
       // 字典拉不到不影响看列表，筛选项留空即可。
     });
@@ -149,6 +157,7 @@ window.products = (function ($) {
 
     put("q", $("#filter-q").val().trim());
     put("categoryId", $("#filter-category").val());
+    put("areaId", $("#filter-area").val());
     put("condition", $("#filter-condition").val());
     put("minPrice", $("#filter-min").val());
     put("maxPrice", $("#filter-max").val());

@@ -21,8 +21,9 @@
     [/^\/announcements$/, function (match, query) { announcements.showList(query); }],
     [/^\/login$/, function () { auth.showLogin(); }],
     [/^\/register$/, function () { auth.showRegister(); }],
-    [/^\/categories$/, function () { showCategories(); }],
-    [/^\/dormitory-areas$/, function () { showDormitoryAreas(); }]
+    // query 要传下去：宿舍区那页是分页的，不传的话翻到第 2 页再点刷新就跳回第 1 页。
+    [/^\/categories$/, function () { dictionaries.showCategories(); }],
+    [/^\/dormitory-areas$/, function (match, query) { dictionaries.showDormitoryAreas(query); }]
   ];
 
   /* hash 拆成路径和查询串两半。筛选条件放在查询串里，所以刷新和后退都能回到同一页。 */
@@ -62,6 +63,10 @@
       if (match) {
         routes[index][1](match, parsed.query);
         paintNav(parsed.path);
+
+        /* 首页那两张入口卡是渲染时才有的，所以管理入口不能只在登录状态变化时刷一次，
+         * 每次换页都要跟着重刷。 */
+        paintAdminNav();
         return;
       }
     }
@@ -78,6 +83,17 @@
     $("#site-nav a[href='#" + path + "']").addClass("is-active").attr("aria-current", "page");
   }
 
+  /* 分类和宿舍区的管理入口只给管理员看。藏的是导航两条链接和首页那两张入口卡，
+   * 不是访问控制——路由守卫在 dictionaries.js 里，接口那边的判定在服务端。 */
+  function paintAdminNav() {
+    var current = auth.user();
+    var admin = !!current && current.role === 2;
+
+    $("#nav-categories").toggle(admin);
+    $("#nav-dormitory-areas").toggle(admin);
+    $("#admin-entries").toggle(admin);
+  }
+
   /* ---------- 首页 ---------- */
 
   function showHome() {
@@ -90,91 +106,12 @@
       '<a class="button button-primary" href="#/products">去逛商品</a>' +
       '<a class="button" href="#/products/new">发布商品</a>' +
       '</div></div>' +
-      '<div class="grid-2">' +
+      '<div class="grid-2" id="admin-entries">' +
       '<a class="card entry-card" href="#/categories">' +
       '<strong>分类字典</strong><span>GET /api/categories</span></a>' +
       '<a class="card entry-card" href="#/dormitory-areas">' +
       '<strong>宿舍区字典</strong><span>GET /api/dormitory-areas</span></a>' +
       '</div>');
-  }
-
-  /* ---------- 分类字典 ---------- */
-
-  // 扁平列表按 parentId 递归成嵌套的 <ul>。接口最多给 100 条，够用。
-  function treeHtml(items, parentId, depth) {
-    var children = items.filter(function (item) {
-      return item.parentId === parentId;
-    });
-
-    if (!children.length) {
-      return "";
-    }
-
-    return '<ul class="' + (depth ? "tree-child" : "tree") + '">' +
-      children.map(function (item) {
-        return '<li>' +
-          '<div class="tree-node">' +
-          '<span class="tree-name">' + NM.esc(item.name) + '</span>' +
-          '<span class="tree-meta">ID ' + item.id + ' · 排序 ' + item.sortOrder + '</span>' +
-          '</div>' +
-          treeHtml(items, item.id, depth + 1) +
-          '</li>';
-      }).join("") +
-      '</ul>';
-  }
-
-  function showCategories() {
-    $("#view").html(
-      '<div class="card">' +
-      '<div class="card-head"><h2>分类字典</h2>' +
-      '<button class="button" data-reload>刷新</button></div>' +
-      '<div id="tree">' + NM.loading() + '</div>' +
-      '</div>');
-
-    api.get("/api/categories", { page: 1, pageSize: 100 }).then(function (page) {
-      var html = treeHtml(page.items, null, 0);
-
-      $("#tree").html((html ? html : NM.empty("没有分类。")) +
-        '<p class="muted">共 ' + page.totalCount + ' 个分类。</p>');
-    }, function (error) {
-      $("#tree").html(NM.errorCard(error));
-    });
-  }
-
-  /* ---------- 宿舍区字典 ---------- */
-
-  function showDormitoryAreas(page) {
-    $("#view").html(
-      '<div class="card">' +
-      '<div class="card-head"><h2>宿舍区字典</h2>' +
-      '<button class="button" data-reload>刷新</button></div>' +
-      '<div id="list">' + NM.loading() + '</div>' +
-      '</div>');
-
-    api.get("/api/dormitory-areas", { page: page || 1, pageSize: 20 }).then(function (result) {
-      if (!result.items.length) {
-        $("#list").html(NM.empty("这一页没有数据。"));
-        return;
-      }
-
-      $("#list").html(
-        '<div class="table-scroll"><table><thead><tr>' +
-        '<th>ID</th><th>名称</th><th class="num">排序</th><th>创建时间</th><th>更新时间</th>' +
-        '</tr></thead><tbody>' +
-        result.items.map(function (area) {
-          return '<tr>' +
-            '<td>' + area.id + '</td>' +
-            '<td>' + NM.esc(area.name) + '</td>' +
-            '<td class="num">' + area.sortOrder + '</td>' +
-            '<td>' + NM.formatDateTime(area.createdAt) + '</td>' +
-            '<td>' + NM.formatDateTime(area.updatedAt) + '</td>' +
-            '</tr>';
-        }).join("") +
-        '</tbody></table></div>' +
-        NM.pagerHtml(result, function (target) { return "#/dormitory-areas?page=" + target; }));
-    }, function (error) {
-      $("#list").html(NM.errorCard(error));
-    });
   }
 
   /* ---------- 主题 ---------- */
@@ -290,6 +227,32 @@
     })
     .on("click", "[data-action='delete-announcement']", function () {
       announcements.deleteAnnouncement($(this).attr("data-announcement-id"));
+    })
+    .on("submit", "#category-form", function (event) {
+      event.preventDefault();
+      dictionaries.submitCategory();
+    })
+    .on("submit", "#area-form", function (event) {
+      event.preventDefault();
+      dictionaries.submitArea();
+    })
+    .on("click", "[data-action='edit-category']", function () {
+      dictionaries.editCategory($(this).attr("data-category-id"));
+    })
+    .on("click", "[data-action='cancel-category']", function () {
+      dictionaries.cancelCategory();
+    })
+    .on("click", "[data-action='delete-category']", function () {
+      dictionaries.deleteCategory($(this).attr("data-category-id"));
+    })
+    .on("click", "[data-action='edit-area']", function () {
+      dictionaries.editArea($(this).attr("data-area-id"));
+    })
+    .on("click", "[data-action='cancel-area']", function () {
+      dictionaries.cancelArea();
+    })
+    .on("click", "[data-action='delete-area']", function () {
+      dictionaries.deleteArea($(this).attr("data-area-id"));
     });
 
   /* 编辑表单提交时要知道改的是哪个 id。事件是委托的，处理函数不在渲染时的闭包里，
@@ -306,9 +269,13 @@
     paintThemeButton();
     paintVisitCounter();
 
-    /* 未读徽标跟着登录状态走。注册这一个回调就够：下面的 auth.refresh() 会走 paint()，
-     * 之后的登录、退出也都走同一处。 */
+    /* 未读徽标和管理入口都跟着登录状态走。注册这两个回调就够：下面的 auth.refresh() 会走
+     * paint()，之后的登录、退出也都走同一处。
+     *
+     * 注意 paint() 是 callback() 无参调的，所以 paintAdminNav 自己读 auth.user()，
+     * 不能指望参数里有当前用户。 */
     auth.onUserChanged(messages.refreshUnread);
+    auth.onUserChanged(paintAdminNav);
 
     announcements.refreshBar();
 

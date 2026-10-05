@@ -6,7 +6,7 @@ using NCUT_Market.Core.DTOs.Products;
 namespace NCUT_Market.ApiTests;
 
 /// <summary>
-/// The public feed's filters: keyword, category, price, condition, and paging.
+/// The public feed's filters: keyword, category, dormitory area, price, condition, and paging.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -174,6 +174,30 @@ public sealed class ProductSearchTests(ApiFixture fixture) : IClassFixture<ApiFi
             ("categoryId", fixture.OtherCategoryId.ToString()));
 
         Assert.Equal(0, results.TotalCount);
+    }
+
+    [Fact]
+    public async Task Filtering_by_a_dormitory_area_returns_only_listings_in_it()
+    {
+        var (client, _) = await fixture.CreateSignedInClientAsync();
+        var anonymous = fixture.CreateAnonymousClient();
+        var token = NewToken();
+
+        var here = await client.PublishListingAsync(
+            fixture, $"搜索-宿舍楼-{token}", areaId: fixture.DormitoryAreaId);
+        var elsewhere = await client.PublishListingAsync(
+            fixture, $"搜索-宿舍楼-{token}", areaId: fixture.OtherDormitoryAreaId);
+
+        var results = await SearchAsync(
+            anonymous,
+            ("q", token),
+            ("areaId", fixture.DormitoryAreaId.ToString()));
+
+        // Both listings share the token, so the only thing separating them is the area. Without the
+        // decoy this would pass even if areaId were ignored outright.
+        Assert.Equal(1, results.TotalCount);
+        Assert.Equal(here.Id, results.Items[0].Id);
+        Assert.DoesNotContain(elsewhere.Id, results.Items.Select(x => x.Id));
     }
 
     [Fact]

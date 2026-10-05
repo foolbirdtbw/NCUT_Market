@@ -2,7 +2,8 @@
  * 函数体是从源文件里按大括号匹配抠出来的，不是在这里重打一遍，所以不会和实际代码脱节。
  *
  * esc / formatDateTime / formatPrice / conditionText / statusText / categoryOptions 在 ui.js，
- * treeHtml 在 app.js——它们原本都在 app.js 里，商品页面要共用才搬了出去。
+ * treeHtml 在 dictionaries.js——它们原本都在 app.js 里，商品页面要共用才搬了出去，
+ * 分类树后来又跟着分类管理页搬到了 dictionaries.js。
  *
  * 注意：必须在 PowerShell 里跑。Git Bash 会把 TZ 变量吞掉，那样多次运行其实是同一个时区。
  */
@@ -12,7 +13,10 @@ const path = require("path");
 const root = path.join(__dirname, "..", "web", "js");
 
 // 每个文件都要读：下面那道"未声明就赋值"的检查是逐文件做的。
-const files = ["ui.js", "auth.js", "api.js", "products.js", "messages.js", "announcements.js", "app.js"];
+const files = [
+  "ui.js", "auth.js", "api.js", "products.js",
+  "messages.js", "announcements.js", "dictionaries.js", "app.js"
+];
 
 const sources = {};
 
@@ -129,7 +133,7 @@ function scan(source, start, open, close) {
  * 少了那张表 eval 出来就是个 ReferenceError。
  */
 function extract(name) {
-  for (const file of ["ui.js", "app.js"]) {
+  for (const file of ["ui.js", "dictionaries.js", "app.js"]) {
     const source = sources[file];
 
     const fn = source.indexOf("function " + name + "(");
@@ -171,7 +175,7 @@ const formatPrice = wrap(["formatPrice"], "formatPrice");
 const conditionText = wrap(["CONDITIONS", "conditionText"], "conditionText");
 const statusText = wrap(["STATUSES", "statusText"], "statusText");
 const categoryOptions = wrap(["esc", "categoryOptions"], "categoryOptions");
-// treeHtml 在 app.js 里，调的是 NM.esc 而不是裸的 esc。补一个最小的 NM 顶上。
+// treeHtml 在 dictionaries.js 里，调的是 NM.esc 而不是裸的 esc。补一个最小的 NM 顶上。
 const treeHtml = wrap(["esc", "treeHtml"], "treeHtml", "var NM = { esc: esc };");
 
 let failures = 0;

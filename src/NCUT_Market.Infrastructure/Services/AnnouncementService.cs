@@ -51,11 +51,11 @@ internal sealed class AnnouncementService(AppDbContext dbContext) : IAnnouncemen
         CreateAnnouncementRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (!await IsAdminAsync(userId, cancellationToken))
+        if (!await dbContext.IsAdminAsync(userId, cancellationToken))
         {
             return OperationResult<AnnouncementResponse>.Failure(
                 ErrorCodes.Forbidden,
-                "你没有权限做这件事。");
+                AdminUserExtensions.ForbiddenMessage);
         }
 
         var now = AppDbContext.AuditNow;
@@ -98,11 +98,11 @@ internal sealed class AnnouncementService(AppDbContext dbContext) : IAnnouncemen
         long userId,
         CancellationToken cancellationToken = default)
     {
-        if (!await IsAdminAsync(userId, cancellationToken))
+        if (!await dbContext.IsAdminAsync(userId, cancellationToken))
         {
             return OperationResult<bool>.Failure(
                 ErrorCodes.Forbidden,
-                "你没有权限做这件事。");
+                AdminUserExtensions.ForbiddenMessage);
         }
 
         var announcement = await dbContext.Announcements
@@ -117,33 +117,5 @@ internal sealed class AnnouncementService(AppDbContext dbContext) : IAnnouncemen
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return OperationResult<bool>.Success(true);
-    }
-
-    /// <summary>
-    /// Whether the account may publish or delete announcements, read from the row on every call.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Deliberately not a claim in the token. A role baked into a seven-day JWT would mean promoting
-    /// an account with a hand-run UPDATE had no effect until that user signed out and back in — a gap
-    /// that is invisible until somebody is staring at a missing admin form with a perfectly valid
-    /// token in hand. The cost is one primary-key lookup per administrative request, and neither
-    /// publishing nor deleting an announcement is a hot path.
-    /// </para>
-    /// <para>
-    /// <see cref="UserStatus"/> is checked alongside it because the row is already loaded: a token
-    /// issued before the account was disabled still satisfies <c>[Authorize]</c>, and this is the
-    /// cheapest place to notice.
-    /// </para>
-    /// </remarks>
-    private async Task<bool> IsAdminAsync(long userId, CancellationToken cancellationToken)
-    {
-        var user = await dbContext.Users
-            .AsNoTracking()
-            .Where(x => x.Id == userId)
-            .Select(x => new { x.Role, x.Status })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return user is { Role: UserRole.Admin, Status: UserStatus.Active };
     }
 }

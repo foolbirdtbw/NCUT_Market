@@ -88,6 +88,9 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     /// <summary>Active dormitory area.</summary>
     public long DormitoryAreaId { get; private set; }
 
+    /// <summary>A second active dormitory area, so a filter can be shown to exclude something.</summary>
+    public long OtherDormitoryAreaId { get; private set; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureServices(services =>
@@ -180,9 +183,11 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     /// would be testing the error path.
     /// </para>
     /// <para>
-    /// Find-or-create by fixed name rather than insert. Each test class gets its own fixture, and
-    /// <c>categories.name</c> carries a unique index, so an unconditional insert would collide on the
-    /// second class. Rows are named so they are recognisable in the test database afterwards.
+    /// Find-or-create by fixed name rather than insert, because each test class gets its own fixture
+    /// against one shared database. <c>dormitory_areas.name</c> carries a unique index, so a second
+    /// class inserting unconditionally would collide outright; <c>categories.name</c> does not, and
+    /// would instead pile up rows the other tests then have to step around. Rows are named so they
+    /// are recognisable in the test database afterwards.
     /// </para>
     /// </remarks>
     private async Task EnsureReferenceDataAsync(AppDbContext dbContext)
@@ -201,16 +206,8 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
         ChildCategoryId = await EnsureCategoryAsync(dbContext, "测试-子分类", root.Id);
         OtherCategoryId = await EnsureCategoryAsync(dbContext, "测试-独立分类", null);
 
-        var area = await dbContext.DormitoryAreas.FirstOrDefaultAsync(x => x.Name == "测试-宿舍区");
-
-        if (area is null)
-        {
-            area = new DormitoryArea { Name = "测试-宿舍区", SortOrder = 900 };
-            dbContext.DormitoryAreas.Add(area);
-            await dbContext.SaveChangesAsync();
-        }
-
-        DormitoryAreaId = area.Id;
+        DormitoryAreaId = await EnsureAreaAsync(dbContext, "测试-宿舍区");
+        OtherDormitoryAreaId = await EnsureAreaAsync(dbContext, "测试-另一个宿舍区");
     }
 
     /// <summary>
@@ -322,6 +319,20 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
         }
 
         return category.Id;
+    }
+
+    private static async Task<long> EnsureAreaAsync(AppDbContext dbContext, string name)
+    {
+        var area = await dbContext.DormitoryAreas.FirstOrDefaultAsync(x => x.Name == name);
+
+        if (area is null)
+        {
+            area = new DormitoryArea { Name = name, SortOrder = 900 };
+            dbContext.DormitoryAreas.Add(area);
+            await dbContext.SaveChangesAsync();
+        }
+
+        return area.Id;
     }
 
     /// <summary>
