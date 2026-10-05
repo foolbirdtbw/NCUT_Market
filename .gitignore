@@ -22,3 +22,7 @@ src/NCUT_Market.Api/data/
 TestResults/
 coverage*.json
 coverage*.xml
+
+# Written by db/seed-demo.ps1 — it lists the generated demo accounts, which are throwaway
+# local rows, not something a clone should inherit.
+db/demo-accounts.txt

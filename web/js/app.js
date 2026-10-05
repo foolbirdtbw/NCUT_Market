@@ -200,6 +200,42 @@
     paintThemeButton();
   }
 
+  /* ---------- 页脚计数器 ---------- */
+
+  /* 千禧年门户的标配。纯装饰：数字存在 localStorage 里，每加载一次加一，
+   * 不接任何真实统计——刷新几遍就会发现自己「访问」了好多次。
+   * 拿不到 localStorage 就渲染 000000，不报错也不留空白。 */
+  function paintVisitCounter() {
+    var slot = $("#visit-counter");
+
+    if (!slot.length) {
+      return;
+    }
+
+    var count = 0;
+
+    try {
+      count = parseInt(localStorage.getItem("ncut.visits"), 10) || 0;
+    } catch (e) {
+      // 无痕模式下 localStorage 可能直接抛异常。计数是装饰，不必为此中断启动。
+    }
+
+    count++;
+
+    try {
+      localStorage.setItem("ncut.visits", String(count));
+    } catch (e) { }
+
+    var text = String(count);
+
+    while (text.length < 6) {
+      text = "0" + text;
+    }
+
+    // 一格一位。字符只可能是 0-9，所以这里不需要 esc()。
+    slot.html(text.replace(/./g, "<span>$&</span>"));
+  }
+
   /* ---------- 事件：委托在 document 上，绑一次 ---------- */
 
   $(document)
@@ -268,6 +304,7 @@
 
   $(function () {
     paintThemeButton();
+    paintVisitCounter();
 
     /* 未读徽标跟着登录状态走。注册这一个回调就够：下面的 auth.refresh() 会走 paint()，
      * 之后的登录、退出也都走同一处。 */

@@ -1,40 +1,90 @@
 /* NCUT Market 样式。手写，无框架无构建。
-   令牌 → 重置 → 布局 → 组件 → 响应式。 */
+ *
+ * 皮肤是「网页粗野主义」：纯白底、纯黑字、蓝色带下划线链接、1px 实线框、直角、
+ * 零过渡、零阴影、零渐变。看起来应该像用记事本写的、再 FTP 传上去的页面。
+ *
+ * 深色模式是同一套东西的黑白反相——同一批令牌换值，组件规则一行不重写。
+ *
+ * 分区：令牌 → 重置/排版 → 布局 → 外框 → 控件 → 卡片/网格 → 消息/表格
+ *       → 公告 → 页脚 → 反相主题 → 响应式
+ *
+ * 三条纪律：
+ *   1. 组件里不写死颜色，一律走令牌。两套主题因此只换值。
+ *   2. 直角、零过渡、零阴影是硬规矩，不是风格偏好。文件里搜不到 border-radius、
+ *      box-shadow、transition、linear-gradient——只有下面那条把它们钉死的规则。
+ *   3. 按钮和输入框的「系统铬色」（银灰面 + 白/#808080 斜面）两套主题里**不换**。
+ *      它们是同一个物件，跟页面底色无关——就像黑色桌面上摆的 Windows 按钮
+ *      仍然是银色的。
+ */
 
 :root {
-  --bg: #f5f6f8;
-  --surface: #fff;
-  --surface-alt: #f0f2f5;
-  --border: #e0e4e9;
-  --text: #1b1f24;
-  --muted: #676f7a;
-  --accent: #2563eb;
-  --accent-weak: #e8effd;
-  --danger: #c0392b;
-  --danger-weak: #fdecea;
-  --danger-border: #f3c2bb;
-  --success: #1f7a4d;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --text: #000000;
+  /* 正文弱化色。规范说弱化色也用纯黑、靠结构分层次——但 12px 的元信息
+     （成色、时间、页数）全黑会糊成一片，读不出来。这是有意的偏离。 */
+  --muted: #444444;
+  --border: #000000;
+
+  --accent: #0000ff;
+  --link-visited: #551a8b;
+  --danger: #ff0000;
+  --success: #008000;
+
+  /* 系统银灰：按钮的面。必须比白色深，否则白面 + 白色上左边框＝斜面完全看不见，
+     那就不成其为 Windows 95 按钮了。规范自己的配色表也是这么写的。 */
+  --chrome: #dfdfdf;
+  --chrome-text: #000000;
+
+  /* 斜面的两色。--bevel-hi 在上/左，--bevel-lo 在下/右：凸起。
+     输入框把两者对调就是凹进去。不用 border-style: outset——它由浏览器按边框色
+     自己算明暗，引擎之间不一致；自绘两色是确定的，而且 :active 只要对调就是「按下去」。 */
+  --bevel-hi: #ffffff;
+  --bevel-lo: #808080;
+
+  /* 输入框聚焦时的底色。模拟 90 年代浏览器选中文本的黄。 */
+  --focus-bg: #ffffcc;
 }
 
+/* 黑白反相。只换令牌，不碰任何组件规则。
+   蓝色在纯黑上只有 1.9:1，读不了，所以链接提亮；红和绿同理。 */
 :root[data-theme="dark"] {
-  --bg: #14171a;
-  --surface: #1c2024;
-  --surface-alt: #23282e;
-  --border: #2e353d;
-  --text: #e7eaee;
-  --muted: #98a1ac;
-  --accent: #6ea8fe;
-  --accent-weak: #1e2a3d;
-  --danger: #f08e84;
-  --danger-weak: #34211f;
-  --danger-border: #5b3630;
-  --success: #7cd0a4;
+  --bg: #000000;
+  --surface: #000000;
+  --text: #ffffff;
+  --muted: #b8b8b8;
+  --border: #ffffff;
+
+  --accent: #66ccff;
+  --link-visited: #b18cff;
+  --danger: #ff5555;
+  --success: #33cc33;
+
+  --focus-bg: #ffffcc;
+
+  /* --chrome / --bevel-* 不在这里重写，这是有意的：见文件头的第 3 条纪律。 */
 }
 
-/* ---------- 重置 ---------- */
+/* ---------- 重置与排版 ---------- */
 
 * { box-sizing: border-box; }
 
+/* 直角、零过渡、零阴影——三条硬规矩钉在一处，不用逐个组件去记。 */
+.button, input, select, textarea, .card, .product-card, .entry-card, .badge,
+.bubble, .nav-badge, .table-scroll, .conv-avatar,
+.gallery-item img, .thread-thumb { border-radius: 0; }
+
+.button, a, input, select, textarea { transition: none; }
+
+/* 正文用宋体。
+ *
+ * 规范给的是等宽或 system-ui——那是写给拉丁文的。这个站九成是中文，等宽中文没有
+ * 好看的系统字体，宋体才是这套东西里真正的「系统正文」。而宋体本身就是衬线，
+ * 顺带把「标题用 Times/Georgia 衬线」这条也满足了：Georgia 管拉丁字，宋体管汉字。
+ *
+ * 当年确实是 12px，但 SimSun 是点阵取向的字体，细笔画在高分屏上低于 13px 就糊成
+ * 一团——那是「看起来坏了」，不是「复古」。抬到 14px，靠颜色、边框和直角去还原
+ * 年代感，而不是靠把字缩小。 */
 body {
   margin: 0;
   min-height: 100vh;
@@ -42,29 +92,65 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font: 14px/1.6 "SimSun", "宋体", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
 }
 
-h1, h2, h3 { margin: 0 0 12px; line-height: 1.3; }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.2rem; }
-h3 { font-size: 1rem; }
-p { margin: 0 0 12px; }
+/* h1 > h2 > h3 > p 就是层级本身，不靠多余的装饰去暗示。 */
+h1, h2, h3 {
+  margin: 0 0 8px;
+  font-family: Georgia, "Times New Roman", "SimSun", "宋体", serif;
+  font-weight: 700;
+  line-height: 1.25;
+}
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1.05rem; }
+p { margin: 0 0 8px; }
 p:last-child { margin-bottom: 0; }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+/* 蓝色带下划线的链接，是这页上最主要的交互元素。hover 只有颜色变化：蓝 → 红。 */
+a { color: var(--accent); text-decoration: underline; }
+a:hover { color: var(--danger); }
 
-code {
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface-alt);
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: .86em;
+/* 但下划线只能留在正文里。下面这些是「长得像按钮或卡片」的锚点，
+   带上下划线会在十几个地方同时崩掉。 */
+.brand,
+.button,
+.entry-card,
+.product-card,
+.conv-item,
+.nav-user,
+.site-nav a,
+.announcement-more,
+.thread-product a,
+.gallery-item a { text-decoration: none; }
+
+/* :visited 只给正文链接。挂在全局 a 上的话，优先级会盖过 .product-card 这类
+   组件的 color，访问过的商品卡片会集体变成紫色。 */
+.lede a:visited,
+.form-foot a:visited,
+.site-footer a:visited,
+.announcement-body a:visited { color: var(--link-visited); }
+
+/* 数字和代码走等宽。价格、ID、日期、页码——这一层等宽纹理是粗野主义的一半。 */
+code,
+.num,
+.product-price,
+.detail-price,
+.visit-counter span {
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code {
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: .88em;
+}
+
+/* 原始 focus：点线，1px，不偏移太多。绝不用发光圈。 */
+:focus-visible { outline: 1px dotted var(--text); outline-offset: 1px; }
 
 .muted { color: var(--muted); }
 
@@ -74,10 +160,10 @@ code {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 12px;
 }
 
-main.wrap { flex: 1 0 auto; padding-top: 24px; padding-bottom: 32px; }
+main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
 
 /* ---------- 顶栏 ---------- */
 
@@ -92,78 +178,125 @@ main.wrap { flex: 1 0 auto; padding-top: 24px; padding-bottom: 32px; }
 .header-inner {
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-height: 58px;
+  gap: 10px;
+  min-height: 44px;
 }
 
-.brand { font-weight: 650; color: var(--text); }
-.brand:hover { text-decoration: none; }
+.brand { color: var(--text); font-size: 1.15rem; font-weight: 700; }
+/* a:hover 是 (0,1,1)，会盖过 .brand 的 (0,1,0)——不写这一条，鼠标移上去站名就变红。
+   下面凡是「整块可点但不是正文链接」的地方都要显式把 hover 的颜色按住。 */
+.brand:hover { color: var(--text); }
 
-.site-nav { display: flex; gap: 4px; margin-left: auto; }
+.site-nav { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.site-nav a { white-space: nowrap; }
+.site-nav a:hover { color: var(--danger); }
 
-.site-nav a {
-  padding: 6px 12px;
-  border-radius: 8px;
-  color: var(--muted);
-  font-weight: 550;
-  white-space: nowrap;
-}
-
-.site-nav a:hover { background: var(--surface-alt); color: var(--text); text-decoration: none; }
-.site-nav a.is-active { background: var(--accent-weak); color: var(--accent); }
+/* 当前页：黑色加粗、去掉下划线。和一排蓝色的可点链接并列时一眼就能认出来，
+   又不需要任何底色或边框。 */
+.site-nav a.is-active { color: var(--text); font-weight: 700; text-decoration: none; }
+.site-nav a.is-active:hover { color: var(--text); }
 
 .site-footer {
   flex: none;
-  padding: 16px 0;
+  padding: 10px 0;
   border-top: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted);
-  font-size: .85rem;
+  font-size: 12px;
 }
 
 /* ---------- 按钮与输入 ---------- */
 
+/* Windows 95 式凸起：白上左 + 灰下右，配银灰面。 */
 .button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
+  appearance: none;
+  padding: 3px 14px;
+  border: 2px solid;
+  border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+  background: var(--chrome);
+  color: var(--chrome-text);
   font: inherit;
-  font-weight: 550;
   cursor: pointer;
 }
 
-.button:hover:not(:disabled) { border-color: var(--accent); background: var(--surface-alt); }
-.button:disabled { opacity: .5; cursor: not-allowed; }
+/* 按钮没有 hover 态。当年的按钮就没有——状态切换只发生在按下的一瞬间，
+   这正是「零过渡」这条规矩在物理上的样子。这里只把 a:hover 的红色按住。 */
+.button:hover:not(:disabled) { color: var(--chrome-text); }
 
-input[type="number"] {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* 按下去：两色对调，纯粹的边框反转。不位移、不缩放、不加阴影。 */
+.button:active:not(:disabled) {
+  border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+}
+
+.button:disabled { color: var(--bevel-lo); cursor: not-allowed; }
+
+/* 只写 display，不写 color。写了的话 a.button 是 (0,1,1)，会盖过下面
+   .button-danger 的 (0,1,0)——删除按钮的字会变成黑的。 */
+a.button { display: inline-block; }
+
+/* 分页的「上一页/下一页」是不可点的 <a>，不是 <button>，所以 :disabled 永远匹配不上
+   ——a:disabled 不是合法的选择器。这一条不能和上面那条合并。 */
+a.button.is-disabled { color: var(--bevel-lo); pointer-events: none; }
+
+/* 主按钮：外面再套一圈 1px 黑框。这是 Windows 上「默认按钮」的样子——
+   不是换个颜色，是多一层框。outline 不是阴影。 */
+.button-primary { outline: 1px solid var(--border); outline-offset: 0; font-weight: 700; }
+
+/* 这条不能省。上面那圈 outline 和全局的 :focus-visible 优先级一样（都是 0,1,0），
+   而它位置靠后——不写这一条的话，主按钮聚焦时看到的是那圈常驻黑框，
+   等于没有焦点提示。 */
+.button-primary:focus-visible { outline: 1px dotted var(--text); outline-offset: 1px; }
+
+.button-danger { color: var(--danger); font-weight: 700; }
+.button-danger:hover:not(:disabled) { color: var(--danger); }
+
+/* 输入框反过来：灰在上左、白在下右，看着是凹进去的，和凸起的按钮配成一套。 */
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+input[type="file"],
+input[type="datetime-local"],
+textarea,
+select {
+  appearance: none;
+  padding: 3px 6px;
+  border: 2px solid;
+  border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  width: 10rem;
+  width: 100%;
 }
+
+/* 聚焦时整格变黄，字变黑——像当年浏览器里选中了一段文字。
+   字色必须跟着走：反相主题下输入框的字本来是白的，压在黄底上就没了。 */
+input:focus,
+textarea:focus,
+select:focus { background: var(--focus-bg); color: #000000; }
+
+input[type="number"] { width: 10rem; }
+input[type="file"] { padding: 2px; }
+textarea { resize: vertical; }
 
 .field {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
-.field label { color: var(--muted); font-size: .9rem; font-weight: 550; }
+.field label { font-weight: 700; }
 
 /* ---------- 卡片 ---------- */
 
+/* 卡片只做一件事：把一个内容块和别的内容块用 1px 线分开。没有阴影、没有圆角、
+   没有渐变标题栏。 */
 .card {
-  padding: 24px;
-  margin-bottom: 16px;
+  padding: 12px;
+  margin-bottom: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -171,87 +304,93 @@ input[type="number"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 
+/* h1 和 h2 都要归零。原来只写了 h2，h1 带着全局的 margin: 0 0 8px，
+   会把标题推得偏下、把这一行撑高。详情页正是 h1。 */
+.card-head h1,
 .card-head h2 { margin: 0; }
 
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+  gap: 10px;
 }
 
-.entry-card { display: flex; flex-direction: column; gap: 4px; color: var(--text); }
-.entry-card:hover { border-color: var(--accent); text-decoration: none; }
+.entry-card { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
+/* 必须显式写 color：<strong> 自己没有颜色规则，会从被 a:hover 染红的 <a> 继承过去。
+   hover 只改边框色，不改底色——白底是这套东西的地基。 */
+.entry-card:hover { border-color: var(--accent); color: var(--text); }
 .entry-card strong { font-size: 1.05rem; }
-.entry-card span { color: var(--muted); font-size: .9rem; }
+.entry-card span { color: var(--muted); font-size: 12px; }
 
-.lede { max-width: 62ch; color: var(--muted); }
+.lede { max-width: 62ch; }
 
-.state-card { text-align: center; padding: 32px; }
+.state-card { text-align: center; padding: 20px; }
 
 .badge {
   display: inline-block;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--surface-alt);
-  color: var(--muted);
-  font-size: .8rem;
-  font-weight: 600;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.badge-ok { background: var(--accent-weak); color: var(--success); }
-.badge-bad { background: var(--danger-weak); color: var(--danger); }
+.badge-ok { border-color: var(--success); color: var(--success); }
+.badge-bad { border-color: var(--danger); color: var(--danger); }
+.badge-sold { border-color: var(--danger); color: var(--danger); }
 
-.loading { padding: 40px 0; text-align: center; color: var(--muted); }
-.empty { padding: 40px 0; text-align: center; color: var(--muted); }
+.loading { padding: 24px 0; text-align: center; color: var(--muted); }
+.empty { padding: 24px 0; text-align: center; color: var(--muted); }
 
+/* 错误块：红框。没有左侧那条粗的强调竖线——单侧粗边框是明确禁止的装饰，
+   四面 1px 一样粗就够把这块框出来了。 */
 .error-card {
-  padding: 16px 20px;
-  margin-bottom: 16px;
-  border: 1px solid var(--danger-border);
-  border-left-width: 4px;
-  border-radius: 8px;
-  background: var(--danger-weak);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--danger);
+  background: var(--surface);
 }
 
 .error-card h3 { color: var(--danger); }
 .error-card p { word-break: break-word; }
 
-.error-meta { margin-bottom: 12px; color: var(--muted); font-size: .82rem; }
-.error-meta code { border-color: var(--danger-border); background: transparent; }
+.error-meta { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.error-meta code { border-color: var(--danger); }
 
 /* ---------- 表格 ---------- */
 
-.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); }
 .table-scroll table { width: 100%; min-width: 520px; border-collapse: collapse; }
 
+/* 每格四面都有线，外框才是闭合的。不要写 tbody tr:last-child td { border-bottom: 0 }
+   ——那会让底边开口，左边右边却还封着。要划线就划全套。 */
 thead th {
-  padding: 10px 16px;
-  background: var(--surface-alt);
-  border-bottom: 1px solid var(--border);
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
   text-align: left;
-  color: var(--muted);
-  font-size: .82rem;
+  font-size: 12px;
   white-space: nowrap;
 }
 
-tbody td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
-tbody tr:last-child td { border-bottom: 0; }
-tbody tr:hover { background: var(--surface-alt); }
-
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
 /* ---------- 分类树 ---------- */
 
 .tree, .tree-child { margin: 0; padding: 0; list-style: none; }
 
 .tree-child {
-  margin-left: 20px;
-  padding-left: 16px;
+  margin-left: 16px;
+  padding-left: 12px;
   border-left: 1px dashed var(--border);
 }
 
@@ -259,26 +398,23 @@ tbody tr:hover { background: var(--surface-alt); }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 3px 0;
 }
-
-.tree-node:hover { background: var(--surface-alt); }
 
 /* 用 CSS 画标记，不用 SVG：jQuery 建的 <svg> 会落在 HTML 命名空间里，渲染不出来。 */
 .tree-node::before {
   content: "";
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   flex: none;
-  border-radius: 2px;
-  background: var(--border);
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
-.tree > li > .tree-node::before { background: var(--accent); }
-.tree-name { font-weight: 550; }
-.tree > li > .tree-node .tree-name { font-weight: 650; }
-.tree-meta { margin-left: auto; color: var(--muted); font-size: .78rem; }
+.tree > li > .tree-node::before { background: var(--text); }
+
+.tree-name { font-weight: 700; }
+.tree-meta { margin-left: auto; color: var(--muted); font-size: 12px; }
 
 /* ---------- 分页 ---------- */
 
@@ -286,15 +422,15 @@ tbody tr:hover { background: var(--surface-alt); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
 }
 
-.pager-status { color: var(--muted); font-size: .88rem; }
-.pager-actions { display: flex; gap: 8px; }
+.pager-status { color: var(--muted); font-size: 12px; }
+.pager-actions { display: flex; gap: 6px; }
 
 /* ---------- 顶栏用户区 ---------- */
 
@@ -303,72 +439,43 @@ tbody tr:hover { background: var(--surface-alt); }
 .nav-user {
   max-width: 10rem;
   overflow: hidden;
-  color: var(--text);
-  font-weight: 550;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.nav-user:hover { color: var(--accent); }
+/* 不退让的话 a:hover 会把昵称染红——这里用的是 --text，不是 --danger，
+   所以必须显式按住，否则 hover 时才看得见区别。 */
+.nav-user:hover { color: var(--text); }
 
-.button-primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-
-.button-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
-
-.button-danger { border-color: var(--danger-border); color: var(--danger); }
-.button-danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-weak); }
-
-a.button { display: inline-block; color: var(--text); }
-a.button:hover { text-decoration: none; }
-a.button.is-disabled { opacity: .5; pointer-events: none; }
-
-.action-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.action-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 
 /* ---------- 表单 ---------- */
 
 .form-card { max-width: 640px; }
 
-.field-stack { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.field-stack label { color: var(--muted); font-size: .9rem; font-weight: 550; }
+.field-stack { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field-stack label { font-weight: 700; }
 
-input[type="text"], input[type="password"], input[type="search"], textarea, select {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  width: 100%;
-}
-
-textarea { resize: vertical; }
-
-.hint { color: var(--muted); font-size: .82rem; }
+.hint { color: var(--muted); font-size: 12px; }
 
 .form-error {
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  border: 1px solid var(--danger-border);
-  border-left-width: 4px;
-  border-radius: 8px;
-  background: var(--danger-weak);
-  color: var(--text);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--danger);
+  background: var(--surface);
   word-break: break-word;
 }
 
-.form-foot { margin-top: 16px; }
+.form-foot { margin-top: 12px; }
 
 .steps {
   display: flex;
-  gap: 20px;
-  margin: 0 0 20px;
+  gap: 16px;
+  margin: 0 0 12px;
   padding: 0 0 0 20px;
   color: var(--muted);
-  font-size: .88rem;
+  font-size: 12px;
 }
 
 /* ---------- 筛选栏 ---------- */
@@ -376,75 +483,77 @@ textarea { resize: vertical; }
 .filter-bar {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 1fr 7rem 7rem auto;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 /* ---------- 商品网格 ---------- */
 
+/* 这是 <a> 的 CSS Grid，不是 <table>，没有 markup 能把它变成表格。
+   做成一格一格的白底方块，用 1px 黑线彼此分开。 */
 .product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 8px;
 }
 
 .product-card {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
   background: var(--surface);
   color: var(--text);
-  transition: border-color .12s;
 }
 
-.product-card:hover { border-color: var(--accent); text-decoration: none; }
+/* hover 只改边框色。整块变底色在白底页面上会糊成一团色块。 */
+.product-card:hover { border-color: var(--accent); color: var(--text); }
 
 .product-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
   aspect-ratio: 1 / 1;
-  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
   overflow: hidden;
 }
 
+/* object-fit 必须是 cover：缩略图是 320 方形的居中裁切，换成 contain 会留黑边。 */
 .product-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.thumb-placeholder { color: var(--muted); font-size: .82rem; }
+.thumb-placeholder { color: var(--muted); font-size: 12px; }
 
-.product-body { display: flex; flex-direction: column; gap: 4px; padding: 12px; }
+.product-body { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; }
 
 .product-title {
   display: -webkit-box;
   overflow: hidden;
-  font-weight: 550;
-  line-height: 1.4;
+  font-weight: 700;
+  line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.product-price { color: var(--danger); font-size: 1.1rem; font-weight: 650; }
-.product-meta { color: var(--muted); font-size: .8rem; }
+.product-price { color: var(--danger); font-size: 1.05rem; font-weight: 700; }
+.product-meta { color: var(--muted); font-size: 12px; }
 
 /* ---------- 详情 ---------- */
 
-.detail-price { margin-bottom: 12px; color: var(--danger); font-size: 1.6rem; font-weight: 650; }
+.detail-price { margin-bottom: 8px; color: var(--danger); font-size: 1.5rem; font-weight: 700; }
 
 .detail-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  margin-bottom: 20px;
-  padding: 12px 0;
+  gap: 4px 16px;
+  margin-bottom: 12px;
+  padding: 6px 0;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   color: var(--muted);
-  font-size: .88rem;
+  font-size: 12px;
 }
 
-.gallery { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
 .gallery-item { position: relative; width: 200px; margin: 0; }
 
@@ -453,27 +562,27 @@ textarea { resize: vertical; }
   width: 100%;
   aspect-ratio: 1 / 1;
   border: 1px solid var(--border);
-  border-radius: 8px;
   object-fit: cover;
 }
 
-.gallery-remove { position: absolute; top: 6px; right: 6px; padding: 2px 10px; font-size: .8rem; }
+.gallery-remove { position: absolute; top: 4px; right: 4px; padding: 0 6px; font-size: 12px; }
 
 .gallery-empty {
   width: 100%;
-  padding: 32px 0;
+  padding: 20px 0;
   border: 1px dashed var(--border);
-  border-radius: 8px;
   color: var(--muted);
   text-align: center;
-  font-size: .88rem;
+  font-size: 12px;
 }
-
-.badge-sold { background: var(--surface-alt); color: var(--danger); }
 
 /* ---------- 顶部公告条 ---------- */
 
-.announcement-bar { background: var(--accent-weak); border-bottom: 1px solid var(--border); }
+/* 白底黑字，靠一条下边框跟正文分开。当年那种黄底公告条是纯装饰的一层底色。 */
+.announcement-bar {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
 
 /* 拉不到公告、或者被关掉之后这里会被清空。空着就不该占一条高度。 */
 .announcement-bar:empty { display: none; }
@@ -481,9 +590,9 @@ textarea { resize: vertical; }
 .announcement-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  font-size: .88rem;
+  gap: 10px;
+  padding: 5px 12px;
+  font-size: 12px;
 }
 
 .announcement-text {
@@ -495,25 +604,17 @@ textarea { resize: vertical; }
   color: var(--text);
 }
 
-.announcement-text strong { margin-right: 8px; }
+.announcement-text strong { margin-right: 6px; color: var(--danger); }
 .announcement-more { white-space: nowrap; }
-.announcement-close { padding: 0 8px; font-size: 1rem; line-height: 1.4; }
+.announcement-close { padding: 0 6px; font-size: 12px; line-height: 1.6; }
 
 /* ---------- 未读徽标 ---------- */
 
-.nav-badge {
-  display: inline-block;
-  min-width: 18px;
-  margin-left: 6px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--accent);
-  /* 跟着主题走：浅色下是白字压深蓝，深色下是深字压浅蓝，两边都读得清。 */
-  color: var(--surface);
-  font-size: .72rem;
-  line-height: 18px;
-  text-align: center;
-}
+/* 不做彩色药丸。数字直接接在链接文字后面写成括号，跟着链接一起是蓝的——
+   这一条是 ::before/::after 加的括号，markup 里只有那个数字。 */
+.nav-badge { font-weight: 700; }
+.nav-badge::before { content: "("; }
+.nav-badge::after { content: ")"; }
 
 /* ---------- 私信：会话列表 ---------- */
 
@@ -522,45 +623,45 @@ textarea { resize: vertical; }
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  padding: 6px 0;
+  /* 点线分隔，不用实线——列表行的年代感就靠这个。 */
+  border-bottom: 1px dotted var(--border);
   color: var(--text);
 }
 
-.conv-item:hover { background: var(--surface-alt); text-decoration: none; }
+.conv-item:hover { color: var(--text); }
 .conv-item:last-child { border-bottom: none; }
 
 .conv-avatar {
   flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--accent-weak);
-  color: var(--accent);
-  font-size: 1.1rem;
-  font-weight: 650;
-  line-height: 40px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 32px;
   text-align: center;
 }
 
-.conv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.conv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 
-.conv-title { font-weight: 600; }
-.conv-preview, .conv-product { color: var(--muted); font-size: .85rem; }
+.conv-title { font-weight: 700; }
+.conv-preview, .conv-product { color: var(--muted); font-size: 12px; }
 .conv-preview, .conv-product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-meta { flex: none; color: var(--muted); font-size: .78rem; white-space: nowrap; }
+.conv-meta { flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
 
-/* 未读只用一个圆点标在标题后面，不整行变色——一列里两种强调同时出现，
+/* 未读只用一个方块标在标题后面，不整行变色——一列里两种强调同时出现，
    反而看不出哪个才是重点。 */
 .conv-item.is-unread .conv-title::after {
   content: "";
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-left: 8px;
-  border-radius: 50%;
-  background: var(--accent);
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  background: var(--danger);
   vertical-align: middle;
 }
 
@@ -568,54 +669,72 @@ textarea { resize: vertical; }
 
 /* ---------- 私信：会话详情 ---------- */
 
-.thread-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.thread-thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; }
+.thread-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.thread-thumb { width: 44px; height: 44px; border: 1px solid var(--border); object-fit: cover; }
 .thread-head-main { flex: 1; min-width: 0; }
-.thread-peer { font-weight: 650; }
-.thread-product { color: var(--muted); font-size: .85rem; }
+.thread-peer { font-weight: 700; }
+.thread-product { color: var(--muted); font-size: 12px; }
 .thread-product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* max-height + overflow-y 这两条是必须的，不是造型：messages.js 的 scrollToBottom()
+   靠 scrollTop(scrollHeight) 把新消息滚进视野，容器一旦不再滚动就静默失效。 */
 .thread-messages {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   max-height: 55vh;
   overflow-y: auto;
-  padding: 4px;
+  padding: 0;
 }
 
-.bubble { max-width: 72%; padding: 8px 12px; border-radius: 12px; background: var(--surface-alt); }
-.bubble-mine { align-self: flex-end; background: var(--accent-weak); }
-.bubble-peer { align-self: flex-start; }
+/* 气泡靠边框颜色区分，不靠底色：自己发的蓝框，对方的黑框，都是白底。 */
+.bubble { max-width: 72%; padding: 5px 8px; border: 1px solid var(--border); background: var(--surface); }
+.bubble-mine { align-self: flex-end; border-color: var(--accent); }
 
 /* 换行交给 pre-wrap，不在 JS 里把 \n 替成 <br>：替了就等于把用户输入再拼一次 HTML。 */
 .bubble-text { white-space: pre-wrap; word-break: break-word; }
-.bubble-meta { margin-top: 4px; color: var(--muted); font-size: .74rem; }
+.bubble-meta { margin-top: 2px; color: var(--muted); font-size: 12px; }
 
-.thread-form { display: flex; gap: 8px; margin-top: 16px; }
+.thread-form { display: flex; gap: 6px; margin-top: 12px; align-items: flex-start; }
 .thread-form textarea { flex: 1; resize: vertical; }
-.thread-more { margin: 8px 0 0; font-size: .82rem; }
+.thread-more { margin: 6px 0 0; font-size: 12px; }
 
 /* ---------- 公告页 ---------- */
 
 .announcement-list { list-style: none; margin: 0; padding: 0; }
-.announcement-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.announcement-item { padding: 8px 0; border-bottom: 1px dotted var(--border); }
 .announcement-item:last-child { border-bottom: none; }
 
-.announcement-head { display: flex; align-items: center; gap: 12px; }
-.announcement-head strong { flex: 1; min-width: 0; }
-.announcement-head .muted { font-size: .8rem; white-space: nowrap; }
+.announcement-head { display: flex; align-items: center; gap: 10px; }
+.announcement-head strong { flex: 1; min-width: 0; font-weight: 700; }
+.announcement-head .muted { font-size: 12px; white-space: nowrap; }
 
-.announcement-body { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; }
+.announcement-body { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
+
+/* ---------- 页脚 ---------- */
+
+/* 访问计数器。数字由 app.js 填进来，每格一个 <span>，此处只留等宽数字的排布。
+   纯装饰，读的是 localStorage，不接任何真实统计。 */
+.visit-counter {
+  display: inline-flex;
+  margin-left: 6px;
+  border: 1px solid var(--border);
+  padding: 0 4px;
+  background: var(--surface);
+  color: var(--text);
+  vertical-align: middle;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
 
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 720px) {
-  .header-inner { flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+  .header-inner { flex-wrap: wrap; gap: 6px; padding: 6px 0; }
   .brand { width: 100%; }
-  .site-nav { margin-left: 0; overflow-x: auto; }
+  .site-nav { margin-left: 0; }
   .auth-slot { margin-left: auto; }
-  .card { padding: 16px; }
+
   .pager { justify-content: center; }
   .pager-status { width: 100%; text-align: center; }
   .pager-actions { width: 100%; }
@@ -627,9 +746,9 @@ textarea { resize: vertical; }
   .filter-bar input[type="search"] { grid-column: 1 / -1; }
   .filter-bar .button { grid-column: 1 / -1; }
 
-  .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-  .gallery-item { width: calc(50% - 6px); }
-  .steps { gap: 12px; padding-left: 16px; font-size: .82rem; }
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .gallery-item { width: calc(50% - 4px); }
+  .steps { gap: 10px; padding-left: 16px; }
 
   /* 公告条换行显示全文，不省略——手机上那条本来就窄，截断了等于没发。 */
   .announcement-inner { flex-wrap: wrap; }

@@ -8,7 +8,7 @@
 | 路径 | 说明 |
 |---|---|
 | `index.html` | 唯一页面。顶栏 + 公告条 + 一个 `<main id="view">`，视图整块替换 |
-| `css/site.css` | 全部样式。亮/暗两套令牌在 `:root` 和 `[data-theme="dark"]` |
+| `css/site.css` | 全部样式。皮肤是「网页粗野主义」：纯白底、纯黑字、蓝下划线链接、直角、零过渡零阴影零渐变。深色模式是同一套东西的黑白反相，两套令牌分别在 `:root` 和 `[data-theme="dark"]` |
 | `js/ui.js` | 渲染小工具，挂 `window.NM`。`esc()` / `formatDateTime()` 和几个枚举翻译都在这里，所有页面共用 |
 | `js/api.js` | 请求入口。定义 `window.api`，在这里把 problem+json 解析成 Error |
 | `js/auth.js` | token 的存取、当前用户、登录注册页、顶栏用户区 |
@@ -32,6 +32,24 @@ dotnet run --project src/NCUT_Market.Api --launch-profile http
 ```
 Serving frontend static files from <仓库根>\web
 ```
+
+## 开发数据
+
+空库看不出任何东西——分页、`srcset`、未读徽标都要有数据才立得起来。
+
+```powershell
+powershell -File db/seed-demo.ps1            # 约 20 用户 / 60 商品 / 25 会话
+powershell -File db/seed-demo.ps1 -Reset     # 先清掉上一次的，再重来
+```
+
+脚本走真实 HTTP 接口，不是直接写表：密码要真哈希，图片要真过一遍 ImageSharp（否则缩略图
+文件不存在，列表页全是一片灰底占位），上架还有状态机。占位图用 `System.Drawing` 现场画，
+不需要任何新依赖。
+
+跑完会打印账号，也会写一份 `db/demo-accounts.txt`（已 gitignore）。密码统一是 `Demo12345!`，
+管理员那个账号的 `role` 是脚本用 SQL 提上去的——仓库里没有提权接口，这是唯一的手段。
+
+**不加 `-Reset` 重跑是累加的**，用户名带随机后缀所以不会冲突，但数据会翻倍。
 
 ## jQuery
 
@@ -81,6 +99,16 @@ value.replace("T", " ").slice(0, 16)
 | 未读数不轮询 | 顶栏那个数字只在页面加载、登录状态变化、读完一个会话之后刷新。两个人同时开着页面，对方发来的消息不会自动跳出来 |
 | 公告条按 id 记「已关闭」 | 关掉之后存在 localStorage 里，刷新不再弹；但发一条新的照样会出现 |
 | 前端测试只覆盖纯函数 | `out/check-frontend.js` 测 `esc` / `formatDateTime` / `treeHtml` 这些不碰 DOM 的函数，外加一道「use strict 下有没有漏声明变量」。视图和请求得靠手点 |
+| 访问计数器是装饰 | 页脚那个数字读 localStorage 自增，不接任何统计，刷新几遍就「访问」了好几次 |
+| 正文 14px 宋体，不是 12px | 当年确实是 12px，但 SimSun 在高分屏上低于 13px 就糊了——那是坏了不是复古。想还原的话改 `:root` 的 `body { font-size }` |
+| 按钮面是 `#dfdfdf`，不是纯白 | 「背景只能是纯白」和「按钮必须有 Windows 95 斜面」是打架的——白面配白色上/左边框，斜面根本看不见。所以按钮用系统银灰面，其余一切纯白。输入框同理，凹进去 |
+| 弱化色没做成纯黑 | 规范要求正文弱化色也用纯黑、靠结构分层次。但 12px 的成色/时间/页码全黑会糊成一片，用了 `#444444` |
+| 只有正文链接有 hover 变色 | 按钮没有 hover 态——当年的按钮就没有，状态只发生在按下那一瞬间。卡片和列表行的 hover 只改边框色或字色，不改底色 |
+| 复古感靠结构不靠动效 | 没有 `<marquee>`，没有闪烁，也没有扫描线。零过渡、零动画 |
+| 深色模式是黑白反相，不是 CRT | 早先那版黑底绿字终端已经去掉。现在两套主题是同一批令牌换值，组件规则一行不重写；链接在纯黑上只有 1.9:1，所以反相时提亮成 `#66ccff` |
+| `/favicon.ico` 404 | 仓库里零图片文件 |
+| `/README.md` 可公开访问 | 内容无敏感信息 |
+| 前后端同源部署 | 前端绑在 API 进程上，所以没有 CORS 配置 |
 
 `out/` 整体是构建产物，只有 `check-frontend.js` 被 `.gitignore` 反向包含进来。**用 PowerShell 跑**：
 
@@ -89,6 +117,3 @@ node out/check-frontend.js
 ```
 
 Git Bash 会把 `TZ` 吞掉，那样连跑几次其实都是同一个时区，测了等于没测。
-| `/favicon.ico` 404 | 仓库里零图片文件 |
-| `/README.md` 可公开访问 | 内容无敏感信息 |
-| 前后端同源部署 | 前端绑在 API 进程上，所以没有 CORS 配置 |
