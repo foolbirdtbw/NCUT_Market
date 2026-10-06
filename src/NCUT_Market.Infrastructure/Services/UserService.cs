@@ -36,12 +36,17 @@ internal sealed class UserService(AppDbContext dbContext) : IUserService
         {
             var pattern = LikePattern.Contains(keyword.Trim());
 
-            // Username or nickname, because an administrator may have been given either — the login name
-            // off a form, or the display name off a listing. Case is handled by the column collation
-            // (utf8mb4_0900_ai_ci, case-insensitive), not here.
+            // Username, nickname or student number, because an administrator may have been given any of
+            // the three — the login name off a form, the display name off a listing, or the number read
+            // off a student card. Case is handled by the column collation (utf8mb4_0900_ai_ci,
+            // case-insensitive), not here. The student number is matched as a substring like the other
+            // two, so the middle block of a number finds it without the administrator typing all 13
+            // digits. Rows predating the column have NULL there, and NULL LIKE anything is not true,
+            // so they simply do not match this clause.
             users = users.Where(x =>
                 EF.Functions.Like(x.Username, pattern, LikePattern.Escape) ||
-                EF.Functions.Like(x.Nickname, pattern, LikePattern.Escape));
+                EF.Functions.Like(x.Nickname, pattern, LikePattern.Escape) ||
+                EF.Functions.Like(x.StudentId, pattern, LikePattern.Escape));
         }
 
         var totalCount = await users.CountAsync(cancellationToken);
@@ -57,6 +62,7 @@ internal sealed class UserService(AppDbContext dbContext) : IUserService
                 x.Id,
                 x.Username,
                 x.Nickname,
+                x.StudentId,
                 x.Role,
                 x.Status,
                 x.CreatedAt,

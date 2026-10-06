@@ -167,16 +167,86 @@ public sealed class AuthEndpointTests(ApiFixture fixture) : IClassFixture<ApiFix
 
         var response = await client.PostAsJsonAsync(
             "/api/auth/register",
-            new RegisterRequest("shortpw-" + Guid.NewGuid().ToString("N")[..8], "abc", "测试"));
+            new RegisterRequest(
+                "shortpw-" + Guid.NewGuid().ToString("N")[..8],
+                "abc",
+                "测试",
+                ApiFixture.NewStudentId()));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(ErrorCodes.ValidationError, await ReadCodeAsync(response));
     }
 
-    private static RegisterRequest NewRegistration() => new(
+    [Theory]
+    // Four digits: too short, which is what a mistyped or truncated paste looks like.
+    [InlineData("1234")]
+    // Thirteen digits, but the enrolment year cannot start with 1 — this is the 2024/1024 slip.
+    [InlineData("1024322030157")]
+    // Right length and prefix, but the tail is not digits.
+    [InlineData("202432203015X")]
+    // The full-width digits a Chinese IME produces without a mode switch. Kept out deliberately:
+    // nothing normalises them, so accepting this would mean storing a number nobody can search for.
+    [InlineData("２０２４３２２０３０１５７")]
+    public async Task Registering_with_a_malformed_student_number_is_a_validation_error(string studentId)
+    {
+        var client = fixture.CreateAnonymousClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(
+                "user-" + Guid.NewGuid().ToString("N")[..12],
+                "test-password-123",
+                "测试用户",
+                studentId));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationError, await ReadCodeAsync(response));
+    }
+
+    [Fact]
+    public async Task Registering_without_a_student_number_is_a_validation_error()
+    {
+        var client = fixture.CreateAnonymousClient();
+
+        // Blank rather than omitted: System.Text.Json refuses a missing non-nullable parameter before
+        // the model binder ever runs, which would make this a 400 for the wrong reason and would not
+        // exercise [Required] at all.
+        var response = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(
+                "user-" + Guid.NewGuid().ToString("N")[..12],
+                "test-password-123",
+                "测试用户",
+                "   "));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(ErrorCodes.ValidationError, await ReadCodeAsync(response));
+    }
+
+    [Fact]
+    public async Task Registering_a_duplicate_student_number_is_a_conflict()
+    {
+        var client = fixture.CreateAnonymousClient();
+        var studentId = ApiFixture.NewStudentId();
+
+        var first = await client.PostAsJsonAsync("/api/auth/register", NewRegistration(studentId));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        // Different username, same number: one student, one account. A second registration reusing the
+        // number must be refused on the number alone, not fall through to the username check.
+        var second = await client.PostAsJsonAsync("/api/auth/register", NewRegistration(studentId));
+
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Equal(ErrorCodes.Conflict, await ReadCodeAsync(second));
+    }
+
+    private static RegisterRequest NewRegistration() => NewRegistration(ApiFixture.NewStudentId());
+
+    private static RegisterRequest NewRegistration(string studentId) => new(
         "user-" + Guid.NewGuid().ToString("N")[..12],
         "test-password-123",
-        "测试用户");
+        "测试用户",
+        studentId);
 
     private static async Task<string?> ReadCodeAsync(HttpResponseMessage response)
     {

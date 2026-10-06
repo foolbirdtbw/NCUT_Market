@@ -64,6 +64,13 @@ window.messages = (function ($) {
   }
 
   function showList(query) {
+    /* 顶栏那条一直摆着，未登录点进来落在这张卡上。挡在这里而不是靠接口回 401：
+     * 401 会先渲染出一张空列表，再被人弹到登录页，中间那一跳很难看。 */
+    if (!auth.isSignedIn()) {
+      $("#view").html(NM.signInCard("私信"));
+      return;
+    }
+
     $("#view").html(
       '<div class="card">' +
       '<div class="card-head"><h2>私信</h2>' +
@@ -196,6 +203,12 @@ window.messages = (function ($) {
   }
 
   function showThread(id, query) {
+    // 同 showList：会话链接未登录时也能直接敲进来。
+    if (!auth.isSignedIn()) {
+      $("#view").html(NM.signInCard("私信"));
+      return;
+    }
+
     $("#view").html(NM.loading());
 
     api.get("/api/conversations/" + id, {

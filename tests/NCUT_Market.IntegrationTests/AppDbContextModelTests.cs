@@ -365,4 +365,28 @@ public sealed class AppDbContextModelTests
         // AppDbContext.AuditNow is comparing like with like.
         Assert.Equal("datetime(3)", lastSeen.GetColumnType());
     }
+
+    [Fact]
+    public void Users_student_number_is_nullable_sized_and_unique()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(User))!;
+
+        var studentId = entity.FindProperty(nameof(User.StudentId))!;
+
+        // Nullable, and this one is not a design preference — the table already holds rows from before
+        // the column existed. A required column needs a default, every one of those rows would take the
+        // same value, and the unique index below could not be created over them at all.
+        Assert.True(studentId.IsNullable);
+
+        // 13 digits, the shape the registration regex accepts. Capping it is what makes the unique index
+        // a plain index rather than something MySQL has to truncate to compare.
+        Assert.Equal(13, studentId.GetMaxLength());
+
+        var index = entity.GetIndexes()
+            .Single(x => x.GetDatabaseName() == "uk_users_student_id");
+
+        Assert.True(index.IsUnique);
+        Assert.Equal(nameof(User.StudentId), index.Properties.Single().Name);
+    }
 }

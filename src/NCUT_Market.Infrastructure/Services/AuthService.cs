@@ -44,10 +44,25 @@ internal sealed class AuthService(
                 $"用户名「{username}」已经被注册了。");
         }
 
+        var studentId = request.StudentId.Trim();
+
+        // Same shape and the same caveat as the check above: a courtesy that turns the common case into
+        // a readable 409, with uk_users_student_id as the real guarantee.
+        var studentIdTaken = await dbContext.Users
+            .AnyAsync(x => x.StudentId == studentId, cancellationToken);
+
+        if (studentIdTaken)
+        {
+            return OperationResult<AuthResponse>.Failure(
+                ErrorCodes.Conflict,
+                $"学号「{studentId}」已经被注册了。");
+        }
+
         var user = new User
         {
             Username = username,
             Nickname = request.Nickname.Trim(),
+            StudentId = studentId,
             PasswordHash = string.Empty
         };
 

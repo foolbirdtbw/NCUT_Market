@@ -47,6 +47,18 @@ window.NM = (function () {
       '</div>';
   }
 
+  /* 「这块要登录」的卡片。给 #/mine、#/messages、#/notifications 用——这三条一直摆在顶栏上，
+   * 未登录点进去看到的是这一张，而不是一张拉到 401、再被弹去登录页的空列表。
+   *
+   * what 是"要登录才能看的东西"，拼进句子里。它只可能来自各模块里的字面量，但照样过 esc()：
+   * 这条约定全站不开口子，开了就得每次去想"这里到底可不可信"。 */
+  function signInCard(what) {
+    return '<div class="card state-card"><h1>请先登录</h1>' +
+      '<p class="muted">' + esc(what) + '要登录才能看。</p>' +
+      '<a class="button button-primary" href="#/login">去登录</a>' +
+      '<a class="button" href="#/products">去逛商品</a></div>';
+  }
+
   /* 表单里的行内错误，比错误卡轻，用在提交失败时。 */
   function inlineError(error) {
     return '<div class="form-error">' + esc(error.message) +
@@ -153,6 +165,7 @@ window.NM = (function () {
     loading: loading,
     empty: empty,
     errorCard: errorCard,
+    signInCard: signInCard,
     inlineError: inlineError,
     pagerHtml: pagerHtml,
     conditionText: conditionText,

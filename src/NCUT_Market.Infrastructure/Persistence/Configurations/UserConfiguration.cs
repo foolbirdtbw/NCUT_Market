@@ -14,6 +14,10 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.Username).HasMaxLength(50).IsRequired();
         builder.Property(x => x.PasswordHash).HasMaxLength(255).IsRequired();
         builder.Property(x => x.Nickname).HasMaxLength(50).IsRequired();
+        // Nullable with no default: the rows written before this column existed have no student number,
+        // and they cannot be given one — a shared default would collide on the unique index below.
+        // 13 rather than a rounder number because the format is fixed at 13 digits.
+        builder.Property(x => x.StudentId).HasMaxLength(13);
         builder.Property(x => x.AvatarKey).HasMaxLength(255);
         // The enum starts at 1, so 0 is never a legitimate value. Declaring it as the sentinel makes
         // explicit that the database default applies only when Status was genuinely left unset.
@@ -42,5 +46,8 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.UpdatedAt).HasColumnType("datetime(3)");
 
         builder.HasIndex(x => x.Username).IsUnique().HasDatabaseName("uk_users_username");
+        // One student, one account. The check in AuthService.RegisterAsync only produces a clean 409;
+        // this index is what actually stops two simultaneous registrations from taking the same number.
+        builder.HasIndex(x => x.StudentId).IsUnique().HasDatabaseName("uk_users_student_id");
     }
 }

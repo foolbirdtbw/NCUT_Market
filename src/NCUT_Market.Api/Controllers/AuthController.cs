@@ -21,7 +21,7 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
     /// <response code="200">The account was created, with a token ready to use.</response>
     /// <response code="400">A field was missing or out of range.</response>
-    /// <response code="409">The username is already taken.</response>
+    /// <response code="409">The username or the student number is already taken.</response>
     /// <remarks>
     /// Returns a token rather than a bare 201. Requiring a new user to immediately POST their
     /// credentials again to the login endpoint would be a second round trip to learn nothing the

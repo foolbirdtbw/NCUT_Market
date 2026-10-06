@@ -163,7 +163,8 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
         var request = new RegisterRequest(
             "user-" + Guid.NewGuid().ToString("N")[..12],
             "test-password-123",
-            "测试用户");
+            "测试用户",
+            NewStudentId());
 
         var response = await client.PostAsJsonAsync("/api/auth/register", request);
         response.EnsureSuccessStatusCode();
@@ -175,6 +176,18 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
 
         return (client, auth);
     }
+
+    /// <summary>
+    /// A student number nothing else in the database is using, in the shape registration accepts.
+    /// </summary>
+    /// <remarks>
+    /// Random rather than sequential because the test database is never cleaned and every class runs in
+    /// parallel: a counter would have to be shared, and the unique index would turn any collision into a
+    /// 409 that reads like a registration bug. Eleven random digits collide with probability n²/2·10¹¹,
+    /// which at this suite's row count is not a number worth designing around.
+    /// </remarks>
+    public static string NewStudentId() =>
+        "20" + Random.Shared.NextInt64(0, 100_000_000_000L).ToString("D11");
 
     /// <summary>
     /// A client with no credentials.
@@ -415,6 +428,28 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
 
         var user = await dbContext.Users.FirstAsync(x => x.Id == userId);
         user.Status = UserStatus.Disabled;
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Removes an account's student number, the way it stands for every row that predates the column.
+    /// </summary>
+    /// <param name="userId">The account to strip.</param>
+    /// <remarks>
+    /// Registration requires a number, so no account the API creates is ever in this state — and it is
+    /// the state the nullable column exists for, so the only way to exercise it is to plant it. Written
+    /// as a plain null rather than <c>ExecuteUpdateAsync</c>: the value being assigned is a scalar, not a
+    /// column reference, and going through the change tracker keeps the audit stamp intact.
+    /// </remarks>
+    public async Task ClearStudentIdAsync(long userId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var user = await dbContext.Users.FirstAsync(x => x.Id == userId);
+        user.StudentId = null;
 
         await dbContext.SaveChangesAsync();
     }

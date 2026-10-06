@@ -8,6 +8,10 @@ namespace NCUT_Market.Core.DTOs.Auth;
 /// <param name="Username">Login name. Must be unique across the site.</param>
 /// <param name="Password">Plain text, hashed before storage and never logged.</param>
 /// <param name="Nickname">Display name shown on listings.</param>
+/// <param name="StudentId">
+/// The campus student number: 13 digits beginning with the enrolment year, e.g. <c>2024322030157</c>.
+/// Unique per person, so it cannot be changed after registration any more than the username can.
+/// </param>
 /// <remarks>
 /// <para>
 /// The lengths mirror the column limits in <c>UserConfiguration</c> rather than being chosen
@@ -36,7 +40,13 @@ public sealed record RegisterRequest(
     string Password,
     [param: Required(ErrorMessage = "请填昵称。")]
     [param: StringLength(50, MinimumLength = 1, ErrorMessage = "昵称最多 50 个字符。")]
-    string Nickname);
+    string Nickname,
+    /* 只钉住确认得了的部分。样例 2024322030157 里 2024 是入学年份，中间五位含义不明，
+     * 末四位是编号——中间那五位解释不了，所以不去解释它。剩下两条：13 位，且以 20 开头
+     * （挡住年份写成 1024 这类），2030 年入学也不需要改这里。 */
+    [param: Required(ErrorMessage = "请填学号。")]
+    [param: RegularExpression("^20\\d{11}$", ErrorMessage = "学号是 13 位数字，以 20 开头，比如 2024322030157。")]
+    string StudentId);
 
 /// <summary>Credentials for an existing account.</summary>
 /// <param name="Username">Login name.</param>

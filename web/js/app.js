@@ -68,9 +68,9 @@
         routes[index][1](match, parsed.query);
         paintNav(parsed.path);
 
-        /* 首页那两张入口卡是渲染时才有的，所以管理入口不能只在登录状态变化时刷一次，
-         * 每次换页都要跟着重刷。 */
-        paintAdminNav();
+        /* 首页的入口卡和商品列表的发布按钮都是渲染时才有的，所以这些入口不能只在登录
+         * 状态变化时刷一次，每次换页都要跟着重刷。 */
+        paintNavVisibility();
         return;
       }
     }
@@ -87,11 +87,20 @@
     $("#site-nav a[href='#" + path + "']").addClass("is-active").attr("aria-current", "page");
   }
 
-  /* 管理入口只给管理员看。藏的是导航三条链接和首页那几张入口卡，
-   * 不是访问控制——路由守卫在 dictionaries.js / users.js 里，接口那边的判定在服务端。 */
-  function paintAdminNav() {
+  /* 导航里哪些入口给人看。两条规则——发布要登录、管理入口要管理员——写在一个函数里，因为
+   * 触发点完全一样（每次换页、每次登录状态变化），拆开就是同一件事读两遍 auth.user()。
+   *
+   * 藏起来不是访问控制：路由守卫在 dictionaries.js / users.js 里，接口那边的判定在服务端。
+   *
+   * 只有发布是藏掉的。「我的商品」「私信」「通知」不藏——未登录点进去看到的是 NM.signInCard()
+   * 那张「请先登录」，比一个凭空消失的入口好解释，也顺带告诉人登录了能干什么。 */
+  function paintNavVisibility() {
     var current = auth.user();
     var admin = !!current && current.role === 2;
+
+    /* 发布入口有三处：顶栏、首页、商品列表的卡片头。用属性选择器而不是逐个 id——
+     * 以后再加一处，带上 data-signin-only 就自动跟着走。 */
+    $("[data-signin-only]").toggle(auth.isSignedIn());
 
     $("#nav-categories").toggle(admin);
     $("#nav-dormitory-areas").toggle(admin);
@@ -109,7 +118,7 @@
       '或者看看别人在卖什么。</p>' +
       '<div class="action-bar">' +
       '<a class="button button-primary" href="#/products">去逛商品</a>' +
-      '<a class="button" href="#/products/new">发布商品</a>' +
+      '<a class="button" href="#/products/new" data-signin-only>发布商品</a>' +
       '</div></div>' +
       '<div class="grid-2" id="admin-entries">' +
       '<a class="card entry-card" href="#/categories">' +
@@ -312,11 +321,11 @@
     /* 未读徽标和管理入口都跟着登录状态走。注册这两个回调就够：下面的 auth.refresh() 会走
      * paint()，之后的登录、退出也都走同一处。
      *
-     * 注意 paint() 是 callback() 无参调的，所以 paintAdminNav 自己读 auth.user()，
+     * 注意 paint() 是 callback() 无参调的，所以 paintNavVisibility 自己读 auth.user()，
      * 不能指望参数里有当前用户。 */
     auth.onUserChanged(messages.refreshUnread);
     auth.onUserChanged(notifications.refreshUnread);
-    auth.onUserChanged(paintAdminNav);
+    auth.onUserChanged(paintNavVisibility);
 
     announcements.refreshBar();
 

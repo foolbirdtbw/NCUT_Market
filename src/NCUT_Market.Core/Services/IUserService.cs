@@ -27,7 +27,8 @@ public interface IUserService
     /// </summary>
     /// <param name="adminId">The signed-in account, which must be an active administrator.</param>
     /// <param name="keyword">
-    /// Matched against both username and nickname, as a substring. Null or blank returns everyone.
+    /// Matched against username, nickname and student number, as a substring. Null or blank returns
+    /// everyone.
     /// </param>
     /// <param name="pagination">Page and page size. Out-of-range values are clamped, not rejected.</param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>

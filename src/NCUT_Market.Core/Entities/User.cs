@@ -13,6 +13,26 @@ public sealed class User : IHasCreatedAt, IHasUpdatedAt
 
     public required string Nickname { get; set; }
 
+    /// <summary>
+    /// The campus student number, 13 digits starting with the enrolment year. Unique, and set at
+    /// registration — it is the only field on this entity that identifies the person rather than the
+    /// account, which is what an administrator needs to hand the right account a reset code.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Nullable, and that is not laziness. The table already holds rows from before this column
+    /// existed, and <see cref="Username"/>'s shape is not available here: a non-nullable column needs a
+    /// default, every pre-existing row would take the same one, and the unique index below could not be
+    /// built at all. MySQL treats NULLs as distinct in a unique index, so any number of accounts may
+    /// lack one.
+    /// </para>
+    /// <para>
+    /// A string rather than a number, because the last four digits are a sequence number and
+    /// <c>0157</c> is not the same student as <c>157</c>.
+    /// </para>
+    /// </remarks>
+    public string? StudentId { get; set; }
+
     /// <summary>Object storage key for the avatar, not a URL. Null until the user uploads one.</summary>
     public string? AvatarKey { get; set; }
 

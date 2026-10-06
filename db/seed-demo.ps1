@@ -367,6 +367,12 @@ DELETE FROM product_images
  WHERE product_id IN (SELECT id FROM products WHERE seller_id IN (SELECT id FROM users WHERE username LIKE 'demo\_%'));
 
 DELETE FROM products WHERE seller_id IN (SELECT id FROM users WHERE username LIKE 'demo\_%');
+
+-- 通知 → users 也是 Restrict，而且刻意如此：账号是被停用而不是被删的，不能让一行 user
+-- 悄悄带走通知历史。这里是演示账号真的要被删掉，所以只能显式清一道。
+-- 必须摆在 users 前面。
+DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'demo\_%');
+
 DELETE FROM users WHERE username LIKE 'demo\_%';
 '@
 
@@ -469,6 +475,12 @@ function New-DemoUsername {
     return "demo_$suffix"
 }
 
+# 注册要求学号唯一，所以每次都得是新号：20 + 11 位随机数字，正好是服务端正则要的 13 位。
+# 不加 -Reset 重跑是累加的，随机撞号的概率在几百个账号上是 n²/2·10¹¹，不管它。
+function New-DemoStudentId {
+    return "20" + (Get-Random -Minimum 10000000000 -Maximum 99999999999)
+}
+
 $accounts = @()
 
 foreach ($index in 1..$Users) {
@@ -477,9 +489,10 @@ foreach ($index in 1..$Users) {
 
     # 注册返回 200 而不是 201：它直接给 token，不是「创建了资源+Location」那套。
     $result = Invoke-Json "POST" "/api/auth/register" @{
-        username = $username
-        password = $Password
-        nickname = $nickname
+        username  = $username
+        password  = $Password
+        nickname  = $nickname
+        studentId = New-DemoStudentId
     } -Expect 200
 
     $accounts += @{
@@ -498,9 +511,10 @@ Write-Host "      管理员账号 demo_admin…" -ForegroundColor DarkGray
 
 $adminName = New-DemoUsername
 $adminResult = Invoke-Json "POST" "/api/auth/register" @{
-    username = $adminName
-    password = $Password
-    nickname = "站务"
+    username  = $adminName
+    password  = $Password
+    nickname  = "站务"
+    studentId = New-DemoStudentId
 } -Expect 200
 
 $admin = @{

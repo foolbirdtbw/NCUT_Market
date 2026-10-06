@@ -89,7 +89,7 @@ window.products = (function ($) {
     $("#view").html(
       '<div class="card">' +
       '<div class="card-head"><h2>商品</h2>' +
-      '<a class="button button-primary" href="#/products/new">发布商品</a></div>' +
+      '<a class="button button-primary" href="#/products/new" data-signin-only>发布商品</a></div>' +
       '<form id="search-form" class="filter-bar">' +
       '<input type="search" id="filter-q" placeholder="搜索标题或描述" value="' + NM.esc(query.q || "") + '">' +
       '<select id="filter-category"><option value="">全部分类</option></select>' +
@@ -815,11 +815,25 @@ window.products = (function ($) {
   /* ---------- 我的商品 ---------- */
 
   function showMine(query) {
+    /* 顶栏那条一直摆着，所以未登录点进来必须落在这张卡上。挡在这里而不是靠接口回 401：
+     * 401 会先渲染出一张空列表，再被人弹到登录页，中间那一跳很难看。 */
+    if (!auth.isSignedIn()) {
+      $("#view").html(NM.signInCard("我的商品"));
+      return;
+    }
+
     $("#view").html(
       '<div class="card">' +
       '<div class="card-head"><h2>我的商品</h2>' +
       '<a class="button button-primary" href="#/products/new">发布商品</a></div>' +
       '<div id="mine-list">' + NM.loading() + '</div>' +
+      '</div>' +
+      /* 退出登录在这里，不在顶栏那一排。顶栏点错的代价是当场登出，而登出按钮和导航链接
+       * 长得一样、挨得又近。处理函数本来就委托在 document 上，所以这里只换了标记。 */
+      '<div class="card">' +
+      '<h2>账号</h2>' +
+      '<p class="muted">退出之后要重新登录，才能发布商品、发私信。</p>' +
+      '<button type="button" class="button" data-action="sign-out">退出登录</button>' +
       '</div>');
 
     api.get("/api/products/mine", {

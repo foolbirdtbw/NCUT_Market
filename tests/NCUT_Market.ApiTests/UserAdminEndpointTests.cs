@@ -156,6 +156,68 @@ public sealed class UserAdminEndpointTests(ApiFixture fixture) : IClassFixture<A
     }
 
     [Fact]
+    public async Task An_admin_can_find_an_account_by_student_number()
+    {
+        var admin = await CreateAdminAsync();
+
+        // Registered through the public endpoint rather than through the fixture's helper, because the
+        // point is to search for a number the administrator was actually told. A number the fixture
+        // invented and never sent would prove nothing about the round trip.
+        var studentId = ApiFixture.NewStudentId();
+        var nickname = $"学号-{NewSuffix()}";
+
+        var registered = await fixture.CreateAnonymousClient().PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(
+                "user-" + NewSuffix(),
+                "test-password-123",
+                nickname,
+                studentId));
+
+        registered.EnsureSuccessStatusCode();
+
+        var auth = (await registered.Content.ReadFromJsonAsync<AuthResponse>())!;
+
+        // The whole number first, which is what the administrator reads off a student card.
+        var byFull = await SearchAsync(admin, studentId);
+
+        var found = Assert.Single(byFull.Items, x => x.Id == auth.User.Id);
+
+        Assert.Equal(studentId, found.StudentId);
+
+        // Then the middle block, because the sample number's 中间五位 means an administrator who only
+        // half-remembers it can still land on the account — the same substring rule the page advertises.
+        var byFragment = await SearchAsync(admin, studentId.Substring(4, 5));
+
+        Assert.Contains(byFragment.Items, x => x.Id == auth.User.Id);
+    }
+
+    [Fact]
+    public async Task An_account_with_no_student_number_is_listed_and_simply_does_not_match()
+    {
+        // Rows that predate the column are NULL there, and MySQL treats NULL as distinct in the unique
+        // index — which is exactly why the column is nullable. What has to hold is that such a row is
+        // still an ordinary account in every other respect.
+        var admin = await CreateAdminAsync();
+        var (_, target) = await fixture.CreateSignedInClientAsync();
+
+        await fixture.ClearStudentIdAsync(target.User.Id);
+
+        // No keyword: the account is there, and its student number comes back null rather than throwing
+        // or being quietly dropped from the projection.
+        var all = await SearchAsync(admin, target.User.Username);
+
+        var found = Assert.Single(all.Items, x => x.Id == target.User.Id);
+
+        Assert.Null(found.StudentId);
+
+        // And NULL LIKE anything is not true, so the search clause skips it instead of erroring.
+        var byNumber = await SearchAsync(admin, "2024322030157");
+
+        Assert.DoesNotContain(byNumber.Items, x => x.Id == target.User.Id);
+    }
+
+    [Fact]
     public async Task An_empty_keyword_lists_everyone_in_pages()
     {
         var admin = await CreateAdminAsync();

@@ -136,9 +136,9 @@ window.auth = (function ($) {
 
     var current = user() || {};
 
-    slot.html(
-      '<a class="nav-user" href="#/mine">' + NM.esc(current.nickname || "我的商品") + '</a>' +
-      '<button class="button" data-action="sign-out">退出</button>');
+    /* 顶栏只剩一个入口，退出按钮挪到「我的商品」页里了（products.js 的 showMine）——
+     * 它和导航链接长得一样、挨得又近，点错的代价是当场登出。 */
+    slot.html('<a class="nav-user" href="#/mine">' + NM.esc(current.nickname || "我的商品") + '</a>');
   }
 
   /* ---------- 登录 ---------- */
@@ -203,6 +203,12 @@ window.auth = (function ($) {
       '<input type="text" id="register-nickname" autocomplete="nickname" required>' +
       '<span class="hint">别人看到的名字。</span>' +
       '</div>' +
+      /* type="text" 而不是 number：学号末四位是编号，有 0157 这种前导零，number 会把它吃掉。 */
+      '<div class="field-stack">' +
+      '<label for="register-student-id">学号</label>' +
+      '<input type="text" id="register-student-id" inputmode="numeric" required>' +
+      '<span class="hint">忘了密码要靠它认人，注册后不能改。</span>' +
+      '</div>' +
       '<div class="field-stack">' +
       '<label for="register-password">密码</label>' +
       '<input type="password" id="register-password" autocomplete="new-password" required>' +
@@ -218,12 +224,16 @@ window.auth = (function ($) {
   function submitRegister() {
     var username = $("#register-username").val().trim();
     var nickname = $("#register-nickname").val().trim();
+    var studentId = $("#register-student-id").val().trim();
     var password = $("#register-password").val();
 
     /* 客户端先挡一道，只是为了少一次往返。真正的规则在服务端，那边才是权威——
-     * 这里放过去的任何东西都必须能被服务端再拒一次。 */
-    if (!username || !nickname || !password) {
-      $("#register-error").html(NM.inlineError({ message: "三个字段都要填。" }));
+     * 这里放过去的任何东西都必须能被服务端再拒一次。
+     *
+     * 学号这里只查了空，没有照抄服务端那条正则：用户名长度同样是服务端在管，
+     * 两边各写一份迟早会跑偏，而跑偏的那一份不报错，只是悄悄放行。 */
+    if (!username || !nickname || !studentId || !password) {
+      $("#register-error").html(NM.inlineError({ message: "四个字段都要填。" }));
       return;
     }
 
@@ -232,6 +242,7 @@ window.auth = (function ($) {
     api.post("/api/auth/register", {
       username: username,
       nickname: nickname,
+      studentId: studentId,
       password: password
     }).then(function (response) {
       // 注册接口直接返回 token，所以不用再发一次登录请求。
@@ -244,8 +255,8 @@ window.auth = (function ($) {
 
   /* ---------- 忘记密码 ---------- */
 
-  /* 自助找回密码。没有邮箱也没有手机号，所以流程是：线下找管理员核验身份，管理员在
-   * 用户管理页生成一串一次性重置码，用户在这一页拿它换新密码。
+  /* 找回密码。没有邮箱也没有手机号，所以流程是：在企业微信上找管理员，报学号核验身份，
+   * 管理员在用户管理页按学号搜到人、生成一串一次性重置码，用户在这一页拿它换新密码。
    *
    * 新密码是用户自己设的，管理员看不到——这正是选重置码而不是「管理员给个临时密码」
    * 的理由。 */
@@ -253,8 +264,8 @@ window.auth = (function ($) {
     $("#view").html(
       '<div class="card form-card">' +
       '<h1>重置密码</h1>' +
-      '<p class="muted">这一页需要一个重置码。找管理员当面核验身份（学生证、学号）之后，' +
-      '他会给你一串一次性的码。</p>' +
+      '<p class="muted">重置密码要先拿一个一次性的码。在企业微信上找 <strong>计专研24田搏文</strong>，' +
+      '报上学号核对身份，他会给你一串。</p>' +
       '<form id="forgot-form" novalidate>' +
       '<div class="field-stack">' +
       '<label for="forgot-username">用户名</label>' +

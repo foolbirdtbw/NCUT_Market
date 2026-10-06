@@ -63,9 +63,9 @@ window.users = (function ($) {
       '<h2>找用户</h2>' +
       '<form id="user-search-form" novalidate>' +
       '<div class="field-stack">' +
-      '<label for="user-keyword">用户名或昵称</label>' +
+      '<label for="user-keyword">用户名、昵称或学号</label>' +
       '<input type="text" id="user-keyword" maxlength="50" value="' + NM.esc(currentKeyword) + '">' +
-      '<span class="hint">不用打全，包含就行。留空列出全部用户。</span>' +
+      '<span class="hint">不用打全，包含就行——学号打中间几位也能搜到。留空列出全部用户。</span>' +
       '</div>' +
       '<div class="action-bar">' +
       '<button class="button button-primary" type="submit">搜索</button>' +
@@ -114,7 +114,7 @@ window.users = (function ($) {
 
       $("#list").html(
         '<div class="table-scroll"><table><thead><tr>' +
-        '<th>ID</th><th>用户名</th><th>昵称</th><th>角色</th><th>状态</th>' +
+        '<th>ID</th><th>用户名</th><th>昵称</th><th>学号</th><th>角色</th><th>状态</th>' +
         '<th>注册时间</th><th>重置码</th><th>操作</th>' +
         '</tr></thead><tbody>' +
         result.items.map(rowHtml).join("") +
@@ -132,6 +132,8 @@ window.users = (function ($) {
       '<td>' + user.id + '</td>' +
       '<td>' + NM.esc(user.username) + '</td>' +
       '<td>' + NM.esc(user.nickname) + '</td>' +
+      /* 加学号这一列之前注册的账号没有学号，null 走这一页表示「没有」的那个写法。 */
+      '<td>' + (user.studentId ? NM.esc(user.studentId) : "—") + '</td>' +
       '<td>' + (user.role === 2 ? "管理员" : "普通用户") + '</td>' +
       /* 账号状态和商品状态是两张不同的枚举表，值还会撞车，所以走 userStatusText 而不是 statusText。 */
       '<td>' + NM.userStatusText(user.status) + '</td>' +

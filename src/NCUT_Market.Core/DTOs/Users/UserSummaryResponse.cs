@@ -8,6 +8,10 @@ namespace NCUT_Market.Core.DTOs.Users;
 /// <param name="Id">Primary key. The id the reset-code endpoint is addressed by.</param>
 /// <param name="Username">Login name, which is what an administrator is usually given.</param>
 /// <param name="Nickname">Display name, for when the administrator was given that instead.</param>
+/// <param name="StudentId">
+/// The campus student number. Null for accounts created before the column existed, which is why the
+/// administrator still has two other ways to find one.
+/// </param>
 /// <param name="Role">Carried so the list can mark the other administrators.</param>
 /// <param name="Status">
 /// Active or disabled. Shown because it is the difference between "this user has forgotten their
@@ -19,13 +23,16 @@ namespace NCUT_Market.Core.DTOs.Users;
 /// only their memory to tell them whether they already handed this user a code.
 /// </param>
 /// <remarks>
-/// There is no contact field to include: <c>users</c> has no email and no phone column, which is the
-/// whole reason password recovery runs through an administrator in the first place.
+/// <see cref="StudentId"/> is the closest thing here to a contact field, and it is not one: it matches
+/// the account to a person standing in front of the administrator, but it cannot reach them. There is
+/// still no email and no phone column, which is the whole reason password recovery runs through an
+/// administrator in the first place.
 /// </remarks>
 public sealed record UserSummaryResponse(
     long Id,
     string Username,
     string Nickname,
+    string? StudentId,
     UserRole Role,
     UserStatus Status,
     DateTime CreatedAt,
