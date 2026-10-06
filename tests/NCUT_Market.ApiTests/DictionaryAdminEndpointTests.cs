@@ -36,22 +36,58 @@ public sealed class DictionaryAdminEndpointTests(ApiFixture fixture) : IClassFix
         return client;
     }
 
+    /// <summary>Every category, walking the pages.</summary>
+    /// <remarks>
+    /// One page used to be enough and quietly stopped being enough: the endpoint caps a page at
+    /// <see cref="PaginationQuery.MaxPageSize"/> and the test database is never cleaned, so once enough
+    /// runs had accumulated rows the row a test had just created fell off the first page. The assertions
+    /// then failed with "the thing I just made is not in the list", which reads like a service bug and is
+    /// not one. Walking the pages costs a handful of extra requests and makes the helper mean what its
+    /// name says regardless of how much history the database is carrying.
+    /// </remarks>
     private static async Task<List<CategoryResponse>> ListCategoriesAsync(HttpClient client)
     {
-        var response = await client.GetAsync($"/api/categories?pageSize={PaginationQuery.MaxPageSize}");
+        var all = new List<CategoryResponse>();
 
-        response.EnsureSuccessStatusCode();
+        for (var page = 1; ; page++)
+        {
+            var response = await client.GetAsync(
+                $"/api/categories?pageSize={PaginationQuery.MaxPageSize}&page={page}");
 
-        return (await response.Content.ReadFromJsonAsync<PagedResult<CategoryResponse>>())!.Items.ToList();
+            response.EnsureSuccessStatusCode();
+
+            var result = (await response.Content.ReadFromJsonAsync<PagedResult<CategoryResponse>>())!;
+
+            all.AddRange(result.Items);
+
+            if (page >= result.TotalPages)
+            {
+                return all;
+            }
+        }
     }
 
+    /// <summary>Every dormitory area, walking the pages. Same reason as above.</summary>
     private static async Task<List<DormitoryAreaResponse>> ListAreasAsync(HttpClient client)
     {
-        var response = await client.GetAsync($"/api/dormitory-areas?pageSize={PaginationQuery.MaxPageSize}");
+        var all = new List<DormitoryAreaResponse>();
 
-        response.EnsureSuccessStatusCode();
+        for (var page = 1; ; page++)
+        {
+            var response = await client.GetAsync(
+                $"/api/dormitory-areas?pageSize={PaginationQuery.MaxPageSize}&page={page}");
 
-        return (await response.Content.ReadFromJsonAsync<PagedResult<DormitoryAreaResponse>>())!.Items.ToList();
+            response.EnsureSuccessStatusCode();
+
+            var result = (await response.Content.ReadFromJsonAsync<PagedResult<DormitoryAreaResponse>>())!;
+
+            all.AddRange(result.Items);
+
+            if (page >= result.TotalPages)
+            {
+                return all;
+            }
+        }
     }
 
     private static async Task<CategoryResponse> CreateCategoryAsync(

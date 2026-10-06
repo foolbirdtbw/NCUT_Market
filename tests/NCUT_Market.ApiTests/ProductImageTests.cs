@@ -20,7 +20,7 @@ public sealed class ProductImageTests(ApiFixture fixture) : IClassFixture<ApiFix
     private const int MediumEdge = 640;
 
     [Fact]
-    public async Task Uploading_stores_four_sizes_and_reports_the_sources_dimensions()
+    public async Task Uploading_stores_three_sizes_and_reports_the_sources_dimensions()
     {
         var (client, _) = await fixture.CreateSignedInClientAsync();
         var listing = await client.CreateDraftAsync(fixture, "图片-四档");
@@ -39,11 +39,11 @@ public sealed class ProductImageTests(ApiFixture fixture) : IClassFixture<ApiFix
 
         var keys = await fixture.ImageKeysAsync(image.Id);
 
-        Assert.Equal(4, keys.Length);
-        Assert.Equal(4, keys.Distinct().Count());
+        Assert.Equal(3, keys.Length);
+        Assert.Equal(3, keys.Distinct().Count());
 
-        // All four live under the same month shard, which is what keeps one directory from collecting
-        // every file the site ever receives.
+        // All three live under the same month shard, which is what keeps one directory from
+        // collecting every file the site ever receives.
         var shard = keys[0].Split('/')[0];
 
         Assert.All(keys, key => Assert.StartsWith(shard + "/", key));

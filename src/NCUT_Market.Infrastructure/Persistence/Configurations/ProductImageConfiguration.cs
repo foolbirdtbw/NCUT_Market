@@ -16,7 +16,6 @@ internal sealed class ProductImageConfiguration : IEntityTypeConfiguration<Produ
         });
 
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.OriginalKey).HasMaxLength(255).IsRequired();
         builder.Property(x => x.LargeKey).HasMaxLength(255).IsRequired();
         builder.Property(x => x.MediumKey).HasMaxLength(255).IsRequired();
         builder.Property(x => x.ThumbnailKey).HasMaxLength(255).IsRequired();

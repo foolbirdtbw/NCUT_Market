@@ -1,9 +1,11 @@
 /* 对前端里的纯函数做检查。都不碰 DOM，所以用 Node 直接跑，零依赖。
  * 函数体是从源文件里按大括号匹配抠出来的，不是在这里重打一遍，所以不会和实际代码脱节。
  *
- * esc / formatDateTime / formatPrice / conditionText / statusText / categoryOptions 在 ui.js，
- * treeHtml 在 dictionaries.js——它们原本都在 app.js 里，商品页面要共用才搬了出去，
- * 分类树后来又跟着分类管理页搬到了 dictionaries.js。
+ * esc / formatDateTime / formatPrice / conditionText / statusText / userStatusText /
+ * categoryOptions 在 ui.js，treeHtml 在 dictionaries.js——它们原本都在 app.js 里，
+ * 商品页面要共用才搬了出去，分类树后来又跟着分类管理页搬到了 dictionaries.js。
+ * coverLines / coverPaletteIndex 在 products.js，只有它们自己用。
+ * visitDigits 在 app.js，是页脚那个六位方框，也归它自己。
  *
  * 注意：必须在 PowerShell 里跑。Git Bash 会把 TZ 变量吞掉，那样多次运行其实是同一个时区。
  */
@@ -15,7 +17,8 @@ const root = path.join(__dirname, "..", "web", "js");
 // 每个文件都要读：下面那道"未声明就赋值"的检查是逐文件做的。
 const files = [
   "ui.js", "auth.js", "api.js", "products.js",
-  "messages.js", "announcements.js", "dictionaries.js", "app.js"
+  "messages.js", "notifications.js", "announcements.js", "dictionaries.js",
+  "users.js", "app.js"
 ];
 
 const sources = {};
@@ -133,7 +136,7 @@ function scan(source, start, open, close) {
  * 少了那张表 eval 出来就是个 ReferenceError。
  */
 function extract(name) {
-  for (const file of ["ui.js", "dictionaries.js", "app.js"]) {
+  for (const file of ["ui.js", "dictionaries.js", "app.js", "products.js"]) {
     const source = sources[file];
 
     const fn = source.indexOf("function " + name + "(");
@@ -174,6 +177,7 @@ const formatDateTime = wrap(["formatDateTime"], "formatDateTime");
 const formatPrice = wrap(["formatPrice"], "formatPrice");
 const conditionText = wrap(["CONDITIONS", "conditionText"], "conditionText");
 const statusText = wrap(["STATUSES", "statusText"], "statusText");
+const userStatusText = wrap(["USER_STATUSES", "userStatusText"], "userStatusText");
 const categoryOptions = wrap(["esc", "categoryOptions"], "categoryOptions");
 // treeHtml 在 dictionaries.js 里，调的是 NM.esc 而不是裸的 esc。补一个最小的 NM 顶上。
 const treeHtml = wrap(["esc", "treeHtml"], "treeHtml", "var NM = { esc: esc };");
@@ -256,6 +260,18 @@ check("状态 2", statusText(2), "在售");
 check("状态 3", statusText(3), "已售出");
 check("状态 4", statusText(4), "已下架");
 check("状态越界", statusText(7), "未知状态");
+
+console.log("\nuserStatusText()");
+
+/* 账号状态是另一张表。这里最容易出的错是"复用 statusText"——两张表都从 1 开始，
+ * 编译器和类型都拦不住，而 UserStatus 的 2 正好撞上商品状态的 2。
+ * 下面第一条就是钉死这件事的。 */
+check("账号 1", userStatusText(1), "正常");
+check("账号 2 和商品状态 2 不是一回事", userStatusText(2) === statusText(2), false);
+check("账号 2", userStatusText(2), "已停用");
+check("账号 0（哨兵值）", userStatusText(0), "未知状态");
+check("账号越界", userStatusText(9), "未知状态");
+check("账号 undefined", userStatusText(undefined), "未知状态");
 
 console.log("\ncategoryOptions()");
 
@@ -344,6 +360,93 @@ check(
   treeHtml([{ id: 1, name: '<script>x</script>', parentId: null }], null, 0).includes("&lt;script&gt;"),
   true
 );
+
+console.log("\ncoverLines() / coverPaletteIndex()");
+
+/* 生成封面时唯二会静默出错的地方：切行切错只是难看，取色越界则不声不响地
+ * 画成上一张的颜色（ctx.fillStyle 赋 undefined 不抛错），所以这两条值得钉住。 */
+const coverLines = wrap(["COVER_LINE_CHARS", "COVER_MAX_LINES", "coverLines"], "coverLines");
+const coverPaletteIndex = wrap(["COVER_PALETTE", "coverPaletteIndex"], "coverPaletteIndex");
+const coverPalette = wrap(["COVER_PALETTE"], "COVER_PALETTE");
+
+const eight = "一二三四五六七八";
+
+check("空标题也有一行，不是空数组", coverLines(""), [""]);
+check("短标题一行", coverLines("二手自行车"), ["二手自行车"]);
+check("正好八个字不切", coverLines(eight), [eight]);
+check("九个字切成两行", coverLines(eight + "九"), [eight, "九"]);
+check(
+  "二十四个字正好三行，一个字没丢所以不加省略号",
+  coverLines(eight.repeat(3)),
+  [eight, eight, eight]
+);
+check(
+  "二十五个字仍然三行，末行让出一个字给省略号",
+  coverLines(eight.repeat(3) + "十"),
+  [eight, eight, "一二三四五六七…"]
+);
+
+check(
+  "再长也不超过三行",
+  coverLines(eight.repeat(20)).length <= 3,
+  true
+);
+
+check(
+  "每行都不超过八个字",
+  coverLines(eight.repeat(20) + "尾").every(line => line.length <= 8),
+  true
+);
+
+check(
+  "同一个标题两次取到同一个颜色",
+  coverPaletteIndex("二手自行车") === coverPaletteIndex("二手自行车"),
+  true
+);
+
+/* 越界时 COVER_PALETTE[i] 是 undefined，而 ctx.fillStyle 赋 undefined 既不抛错也不生效，
+ * 只是留着上一次的颜色——图会静默画错。空标题、超长标题、纯符号标题都要落在范围内。 */
+const titles = [
+  "",
+  "x",
+  "二手自行车",
+  "！@#￥%……&*（）",
+  eight.repeat(20) + "尾",
+  "急出！九成新台灯，宿舍自提，价格可议"
+];
+
+check(
+  "每个标题取到的下标都落在调色板范围内",
+  titles.every(t => {
+    const index = coverPaletteIndex(t);
+    return Number.isInteger(index) && index >= 0 && index < coverPalette.length;
+  }),
+  true
+);
+
+check("调色板就是 seed 脚本那十个颜色", coverPalette.length, 10);
+
+console.log("\nvisitDigits()");
+
+/* 页脚那个六位方框。函数本身只是补零加切格子，但它唯一的输入来自一次网络请求，
+ * 所以最后三条才是重点：拉不到、字段改名、后端回了 {} 的时候，这里必须退化成 000000，
+ * 而不是把 undefined 补成 "00undefined" 摆到页脚上。 */
+const visitDigits = wrap(["visitDigits"], "visitDigits");
+
+const digitsOf = html => (html.match(/>(\d+)</g) || []).map(x => x.slice(1, -1)).join("");
+
+check("零是六个零", visitDigits(0), "<span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span>");
+check("补到六位", digitsOf(visitDigits(3)), "000003");
+check("四位数字", digitsOf(visitDigits(1234)), "001234");
+check("正好六位原样", digitsOf(visitDigits(999999)), "999999");
+check("超过六位不截断", digitsOf(visitDigits(1234567)), "1234567");
+check("小数向下取整", digitsOf(visitDigits(12.9)), "000012");
+check("undefined 退化成零", digitsOf(visitDigits(undefined)), "000000");
+check("null 退化成零", digitsOf(visitDigits(null)), "000000");
+check("NaN 退化成零", digitsOf(visitDigits(NaN)), "000000");
+check("负数退化成零", digitsOf(visitDigits(-5)), "000000");
+check("字符串数字照样认", digitsOf(visitDigits("42")), "000042");
+check("不是数字的字符串退化成零", digitsOf(visitDigits("abc")), "000000");
 
 console.log("\n未声明就赋值的标识符（use strict 下会抛 ReferenceError）");
 

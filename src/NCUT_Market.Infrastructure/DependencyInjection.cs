@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NCUT_Market.Core.Entities;
 using NCUT_Market.Core.Services;
+using NCUT_Market.Infrastructure.Jobs;
 using NCUT_Market.Infrastructure.Persistence;
 using NCUT_Market.Infrastructure.Security;
 using NCUT_Market.Infrastructure.Services;
@@ -31,6 +32,8 @@ public static class DependencyInjection
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<StorageOptions>(configuration.GetSection(StorageOptions.SectionName));
+        services.Configure<BackgroundJobsOptions>(
+            configuration.GetSection(BackgroundJobsOptions.SectionName));
 
         // PBKDF2 with a per-user salt and the framework's own format versioning. Registered rather
         // than hand-rolled: the iteration count and the encoded-hash format are things a
@@ -43,9 +46,17 @@ public static class DependencyInjection
         services.AddScoped<ICategoryService, CategoryService>();
         services.AddScoped<IDormitoryAreaService, DormitoryAreaService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IUserService, UserService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IConversationService, ConversationService>();
         services.AddScoped<IAnnouncementService, AnnouncementService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<ITransactionService, TransactionService>();
+        services.AddScoped<IOnlineService, OnlineService>();
+
+        // The first hosted service in the project. It starts the trade-deadline sweep, and it is
+        // switched off in the test host through BackgroundJobsOptions — see that type.
+        services.AddHostedService<TransactionSweepJob>();
 
         return services;
     }

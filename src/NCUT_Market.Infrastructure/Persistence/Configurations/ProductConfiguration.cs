@@ -40,6 +40,19 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(x => x.LastActivityAt).HasColumnType("datetime(3)");
         builder.Property(x => x.PublishedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.SoldAt).HasColumnType("datetime(3)");
+        builder.Property(x => x.TransactionAcceptedAt).HasColumnType("datetime(3)");
+        builder.Property(x => x.BuyerConfirmedAt).HasColumnType("datetime(3)");
+        builder.Property(x => x.SellerConfirmedAt).HasColumnType("datetime(3)");
+
+        // MySQL has no rowversion type, so this is an ordinary column the context bumps by hand on
+        // every modification (see ApplyAuditTimestamps) and EF compares in the WHERE clause. Unsigned
+        // because it only ever counts up; int rather than bigint because four billion writes to one
+        // listing is not a thing that happens.
+        builder.Property(x => x.Version)
+            .HasConversion<uint>()
+            .HasColumnType("int unsigned")
+            .HasDefaultValue(0u)
+            .IsConcurrencyToken();
 
         // Restricted on purpose: neither disabling a user, nor retiring a category or an area,
         // may take listings down with it.
@@ -56,9 +69,24 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             .HasForeignKey(x => x.DormitoryAreaId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // The trade's buyer, which is a second edge onto User and so is named explicitly. Restrict for
+        // the same reason as Seller: users are disabled, never deleted, and a user row must not be able
+        // to take a listing with it.
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.TransactionBuyerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(x => x.SellerId).HasDatabaseName("idx_products_seller_id");
         builder.HasIndex(x => x.CategoryId).HasDatabaseName("idx_products_category_id");
         builder.HasIndex(x => x.DormitoryAreaId).HasDatabaseName("idx_products_dormitory_area_id");
+
+        // Named like its three siblings above rather than left to the provider's IX_* default. This
+        // one is not read by any query — it exists only because MySQL requires an index on the
+        // referencing side of a foreign key — which is exactly why it should be identifiable by name
+        // when someone is looking at the table wondering what it is for.
+        builder.HasIndex(x => x.TransactionBuyerId)
+            .HasDatabaseName("idx_products_transaction_buyer_id");
 
         // Drives the 7-day draft cleanup scan: WHERE status = Draft AND last_activity_at < @cutoff.
         builder.HasIndex(x => new { x.Status, x.LastActivityAt })
@@ -67,5 +95,10 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         // Drives the listing feed, newest first.
         builder.HasIndex(x => new { x.Status, x.CreatedAt })
             .HasDatabaseName("idx_products_status_created_at");
+
+        // Drives all four of the sweep's second-stage scans, which all read
+        // WHERE status = InTransaction AND transaction_accepted_at < @cutoff.
+        builder.HasIndex(x => new { x.Status, x.TransactionAcceptedAt })
+            .HasDatabaseName("idx_products_status_transaction_accepted_at");
     }
 }

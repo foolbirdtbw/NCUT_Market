@@ -159,7 +159,8 @@ window.auth = (function ($) {
       '<div id="login-error"></div>' +
       '<button class="button button-primary" type="submit">登录</button>' +
       '</form>' +
-      '<p class="muted form-foot">还没有账号？<a href="#/register">注册一个</a></p>' +
+      '<p class="muted form-foot">还没有账号？<a href="#/register">注册一个</a>' +
+      ' · <a href="#/forgot">忘记密码？</a></p>' +
       '</div>');
   }
 
@@ -241,6 +242,69 @@ window.auth = (function ($) {
     });
   }
 
+  /* ---------- 忘记密码 ---------- */
+
+  /* 自助找回密码。没有邮箱也没有手机号，所以流程是：线下找管理员核验身份，管理员在
+   * 用户管理页生成一串一次性重置码，用户在这一页拿它换新密码。
+   *
+   * 新密码是用户自己设的，管理员看不到——这正是选重置码而不是「管理员给个临时密码」
+   * 的理由。 */
+  function showForgot() {
+    $("#view").html(
+      '<div class="card form-card">' +
+      '<h1>重置密码</h1>' +
+      '<p class="muted">这一页需要一个重置码。找管理员当面核验身份（学生证、学号）之后，' +
+      '他会给你一串一次性的码。</p>' +
+      '<form id="forgot-form" novalidate>' +
+      '<div class="field-stack">' +
+      '<label for="forgot-username">用户名</label>' +
+      '<input type="text" id="forgot-username" autocomplete="username" required>' +
+      '</div>' +
+      '<div class="field-stack">' +
+      '<label for="forgot-code">重置码</label>' +
+      '<input type="text" id="forgot-code" autocomplete="one-time-code" required>' +
+      '<span class="hint">形如 XXXX-XXXX，大小写和中间的横线都不计较。只能用一次。</span>' +
+      '</div>' +
+      '<div class="field-stack">' +
+      '<label for="forgot-password">新密码</label>' +
+      '<input type="password" id="forgot-password" autocomplete="new-password" required>' +
+      '<span class="hint">至少 6 个字符。设好之后这个码就作废了。</span>' +
+      '</div>' +
+      '<div id="forgot-error"></div>' +
+      '<button class="button button-primary" type="submit">设成新密码</button>' +
+      '</form>' +
+      '<p class="muted form-foot">想起来了？<a href="#/login">回去登录</a></p>' +
+      '</div>');
+  }
+
+  function submitForgot() {
+    var username = $("#forgot-username").val().trim();
+    var code = $("#forgot-code").val().trim();
+    var password = $("#forgot-password").val();
+
+    if (!username || !code || !password) {
+      $("#forgot-error").html(NM.inlineError({ message: "三个字段都要填。" }));
+      return;
+    }
+
+    $("#forgot-error").empty();
+
+    /* 码原样发过去，破折号、空格、大小写都由服务端 Normalize 收拾——
+     * 在这里再理一遍的话，两边规则迟早在某处跑偏。 */
+    api.post("/api/auth/reset-password", {
+      username: username,
+      resetCode: code,
+      newPassword: password
+    }).then(function (response) {
+      // 和注册一样，这个接口直接返回 token，所以重置完就是登录状态。
+      signIn(response);
+      location.hash = pendingHash || "#/products";
+      pendingHash = null;
+    }, function (error) {
+      $("#forgot-error").html(NM.inlineError(error));
+    });
+  }
+
   return {
     token: token,
     user: user,
@@ -254,6 +318,8 @@ window.auth = (function ($) {
     showLogin: showLogin,
     submitLogin: submitLogin,
     showRegister: showRegister,
-    submitRegister: submitRegister
+    submitRegister: submitRegister,
+    showForgot: showForgot,
+    submitForgot: submitForgot
   };
 })(jQuery);

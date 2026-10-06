@@ -41,6 +41,27 @@ public interface IAuthService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Redeems a one-time reset code for a new password, and signs the account in.
+    /// </summary>
+    /// <param name="request">The username, the code an administrator handed over, and the new password.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <returns>
+    /// The issued token on success. Fails with <see cref="ErrorCodes.InvalidCredentials"/> when the
+    /// username is unknown, no code is outstanding, the code is wrong, or it has lapsed — deliberately
+    /// one code and one message for all four, so the response reveals neither which usernames exist nor
+    /// which accounts currently have a reset in flight.
+    /// </returns>
+    /// <remarks>
+    /// This is the other half of <c>IUserService.IssueResetCodeAsync</c>. It lives here rather than
+    /// there because it issues a token, which makes it a sibling of login and registration rather than
+    /// an administrative action — the caller is the account holder, unauthenticated, not an
+    /// administrator.
+    /// </remarks>
+    Task<OperationResult<AuthResponse>> CompleteResetAsync(
+        CompleteResetRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Looks up the account a token belongs to.
     /// </summary>
     /// <param name="userId">The id carried in the token's subject claim.</param>

@@ -268,6 +268,10 @@ window.products = (function ($) {
       '<span>发布于：' + NM.formatDateTime(product.publishedAt || product.createdAt) + '</span>' +
       (product.soldAt ? '<span>售出于：' + NM.formatDateTime(product.soldAt) + '</span>' : '') +
       '</div>' +
+      /* 只有详情页给这两个数。列表页不给：那是公开 feed，挨个商品算子查询没必要，
+       * 而且"有几个人在问"本来就是点进来才关心的东西。 */
+      '<p class="detail-interest">最近一周 ' + product.interestedRecentCount +
+      ' 人询问 · 共 ' + product.interestedTotal + ' 人询问</p>' +
       galleryHtml(product, isOwner) +
       (isOwner ? ownerActionsHtml(product) : contactHtml(product)) +
       '<p id="detail-error"></p>' +
@@ -355,6 +359,202 @@ window.products = (function ($) {
     });
   }
 
+  /* ---------- 用标题生成一张封面 ---------- */
+
+  /* 上架要求至少有一张照片（服务端 PublishAsync 里那道检查），但手边没照片的卖家
+   * ——二手书、刚拆封的耳机、还没拍的自行车——就发不出去了。所以用标题、成色、价格
+   * 和宿舍区在浏览器里画一张方图，当成一张普通照片传上去。
+   *
+   * 在浏览器画而不是服务端画，是因为中文要字体：服务端得引 SixLabors.Fonts 再往仓库塞
+   * 一份可再分发的中文字体，浏览器里字体是现成的。画出来的是真图片，走的是现有上传通道，
+   * 后端三档尺寸和缩略图一行都不用改。 */
+
+  /* 和 db/seed-demo.ps1 里的占位图同一套颜色，生成的图和种子数据看起来是一路的。
+   * 整张图是纯色块，所以这些值不需要跟主题走。 */
+  var COVER_PALETTE = ["#3f6fb5", "#7a4fa3", "#2f8f6f", "#b5543f", "#4a6fa5",
+    "#8a6d3b", "#556b8a", "#9c4f6b", "#3d7a7a", "#6b6b3d"];
+
+  /* 标题哈希成一个调色板下标。同一件东西每次颜色一样，不同的东西大概率不一样。
+   *
+   * 返回值必须落在范围内：越界时 COVER_PALETTE[i] 是 undefined，而 canvas 的 fillStyle
+   * 赋 undefined 既不抛错也不生效，只是留着上一次的颜色——图会静默画错。 */
+  function coverPaletteIndex(title) {
+    var text = String(title || "");
+    var hash = 0;
+
+    for (var index = 0; index < text.length; index++) {
+      hash = (hash * 31 + text.charCodeAt(index)) % 1000003;
+    }
+
+    return hash % COVER_PALETTE.length;
+  }
+
+  /* 标题切成最多三行、每行最多八个字，装不下的截断并补省略号。
+   * 中文没有词边界，所以按字符切，和 seed 脚本里"超过十个字切两行"是一个思路。 */
+  var COVER_LINE_CHARS = 8;
+  var COVER_MAX_LINES = 3;
+
+  function coverLines(title) {
+    var text = String(title || "");
+    var lines = [];
+
+    for (var start = 0; start < text.length && lines.length < COVER_MAX_LINES; start += COVER_LINE_CHARS) {
+      lines.push(text.substr(start, COVER_LINE_CHARS));
+    }
+
+    if (!lines.length) {
+      return [""];
+    }
+
+    /* 还有没画完的，把最后一行收拾成"……"结尾。末行本身可能已经满了八个字，
+     * 那就让掉最后一个字给省略号，不然它会顶出右边框。 */
+    if (lines.length * COVER_LINE_CHARS < text.length) {
+      var last = lines[lines.length - 1];
+
+      lines[lines.length - 1] = last.slice(0, COVER_LINE_CHARS - 1) + "…";
+    }
+
+    return lines;
+  }
+
+  var COVER_EDGE = 800;
+  var COVER_PADDING = 70;
+  var COVER_FONT_STACK = '"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif';
+
+  function coverFont(size, bold) {
+    return (bold ? "bold " : "") + size + "px " + COVER_FONT_STACK;
+  }
+
+  /* 画一张 800x800 的 PNG，返回一个 Deferred，resolve 出来的是 Blob。
+   *
+   * 包一层是因为 canvas.toBlob 是回调式的，而调用点全在用 .then 接的 promise 链。
+   * 尺寸取 800 是照 seed 脚本的占位图来的：小于 1280 那一档，所以大图不会被放大。 */
+  function drawCover(title, price, condition, area) {
+    var deferred = $.Deferred();
+    var canvas = document.createElement("canvas");
+    var context = canvas.getContext("2d");
+
+    canvas.width = COVER_EDGE;
+    canvas.height = COVER_EDGE;
+
+    var inner = COVER_EDGE - COVER_PADDING * 2;
+
+    context.fillStyle = COVER_PALETTE[coverPaletteIndex(title)];
+    context.fillRect(0, 0, COVER_EDGE, COVER_EDGE);
+
+    /* 一圈压暗的内框，和 seed 脚本里那道 FromArgb(55, 0, 0, 0) 的边一样，
+     * 让纯色块看起来是张图而不是一块漏出来的背景。 */
+    context.strokeStyle = "rgba(0, 0, 0, 0.22)";
+    context.lineWidth = 6;
+    context.strokeRect(3, 3, COVER_EDGE - 7, COVER_EDGE - 7);
+
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+
+    var lines = coverLines(title);
+    var titleSize = 76;
+
+    /* 全角字比半角宽得多，八个全角字在 76px 下会顶到内框。量一下最宽的那行，
+     * 按需要把整块缩小——只缩不小，短标题不会撑成大号字。 */
+    context.font = coverFont(titleSize, true);
+
+    lines.forEach(function (line) {
+      var width = context.measureText(line).width;
+
+      if (width > inner) {
+        titleSize = Math.floor(titleSize * inner / width);
+        context.font = coverFont(titleSize, true);
+      }
+    });
+
+    var titleLineHeight = Math.round(titleSize * 1.2);
+    var priceSize = 58;
+    var metaSize = 34;
+
+    /* 三块内容（标题、价格、脚注）当成一整摞垂直居中，不各自固定 y——
+     * 一行标题和两行标题的观感差太多，居中之后才都站得住。 */
+    var blockHeight = lines.length * titleLineHeight + 30 + priceSize + 60 + metaSize;
+    var y = (COVER_EDGE - blockHeight) / 2 + titleLineHeight / 2;
+
+    context.fillStyle = "rgba(255, 255, 255, 0.96)";
+    context.font = coverFont(titleSize, true);
+
+    lines.forEach(function (line) {
+      context.fillText(line, COVER_EDGE / 2, y);
+      y += titleLineHeight;
+    });
+
+    y += 30 + priceSize / 2;
+    context.fillStyle = "rgba(255, 255, 255, 0.9)";
+    context.font = coverFont(priceSize, true);
+    context.fillText(NM.formatPrice(price), COVER_EDGE / 2, y);
+
+    y += priceSize / 2 + 60 + metaSize / 2;
+    context.fillStyle = "rgba(255, 255, 255, 0.75)";
+    context.font = coverFont(metaSize, false);
+    context.fillText(NM.conditionText(condition) + (area ? " · " + area : ""), COVER_EDGE / 2, y);
+
+    /* 导出成 PNG 而不是 JPEG：整张图是纯色块加文字，PNG 压得更小，而且不会在字边上糊出噪点。 */
+    canvas.toBlob(function (blob) {
+      if (blob) {
+        deferred.resolve(blob);
+      } else {
+        deferred.reject({ message: "这张图没画出来，换一张浏览器或者直接传照片吧。" });
+      }
+    }, "image/png");
+
+    return deferred.promise();
+  }
+
+  /* 已经生成但还没上传的那张。uploadAll 会把它捎上。 */
+  var generatedCover = null;
+  var coverPreviewUrl = null;
+
+  function generateCover() {
+    var body = readForm();
+
+    if (!body.title) {
+      $("#cover-slot").html(NM.inlineError({ message: "先填标题，这张图就是用标题画的。" }));
+      return;
+    }
+
+    /* 宿舍区读的是下拉框里那一项的文字。字典还没拉回来时是空的，那就先不写这一行。 */
+    var area = $("#form-area option:selected").text();
+
+    $("#cover-slot").html(NM.loading());
+
+    drawCover(body.title, body.price, body.condition, area).then(function (blob) {
+      generatedCover = blob;
+
+      if (coverPreviewUrl) {
+        URL.revokeObjectURL(coverPreviewUrl);
+      }
+
+      coverPreviewUrl = URL.createObjectURL(blob);
+
+      $("#cover-slot").html(
+        '<img class="cover-preview" src="' + coverPreviewUrl + '" alt="生成的封面预览">' +
+        '<p class="hint">上架时会把它当成一张普通照片传上去，和手选的照片一样。</p>' +
+        '<button type="button" class="button" data-action="discard-cover">不用了</button>');
+
+      $("#generate-cover").text("重新生成");
+    }, function (error) {
+      $("#cover-slot").html(NM.inlineError(error));
+    });
+  }
+
+  function discardCover() {
+    generatedCover = null;
+
+    if (coverPreviewUrl) {
+      URL.revokeObjectURL(coverPreviewUrl);
+      coverPreviewUrl = null;
+    }
+
+    $("#cover-slot").empty();
+    $("#generate-cover").text("没有照片？用标题生成一张");
+  }
+
   /* 当前页面的商品 id。从 hash 里读，不靠闭包——事件是委托的，
    * 处理函数不记得是哪个页面渲染的它。 */
   function currentProductId() {
@@ -436,6 +636,7 @@ window.products = (function ($) {
 
   function showCreate() {
     draft = null;
+    generatedCover = null;
 
     $("#view").html(
       '<div class="card form-card">' +
@@ -450,6 +651,9 @@ window.products = (function ($) {
       '<label for="create-images">图片</label>' +
       '<input type="file" id="create-images" accept="image/jpeg,image/png,image/webp" multiple>' +
       '<span class="hint">JPEG / PNG / WebP，每张不超过 5 MB，最多 9 张。至少一张才能上架。</span>' +
+      // type="button" 不能省，不然这个按钮会当成"创建并上架"提交。
+      '<button type="button" class="button" id="generate-cover">没有照片？用标题生成一张</button>' +
+      '<div id="cover-slot"></div>' +
       '</div>' +
       '<div id="form-error"></div>' +
       '<button class="button button-primary" type="submit" id="create-submit">创建并上架</button>' +
@@ -498,6 +702,12 @@ window.products = (function ($) {
   function uploadAll(productId) {
     var input = $("#create-images");
     var files = input.length && input[0].files ? Array.prototype.slice.call(input[0].files) : [];
+
+    // 生成的封面排在最后：SortOrder 由服务端按现有张数接着往下发，所以第一张是封面时
+    // 仍然是手选的照片，只有一张照片都没选时这张才轮到 SortOrder = 0。
+    if (generatedCover) {
+      files.push(new File([generatedCover], "cover.png", { type: "image/png" }));
+    }
 
     if (!files.length) {
       return $.Deferred().resolve().promise();
@@ -612,6 +822,8 @@ window.products = (function ($) {
     transition: transition,
     deleteProduct: deleteProduct,
     uploadImage: uploadImage,
-    deleteImage: deleteImage
+    deleteImage: deleteImage,
+    generateCover: generateCover,
+    discardCover: discardCover
   };
 })(jQuery);

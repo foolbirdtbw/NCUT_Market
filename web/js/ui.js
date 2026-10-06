@@ -88,16 +88,30 @@ window.NM = (function () {
   }
 
   /* 商品状态。同样按枚举值索引。 */
-  var STATUSES = ["", "草稿", "在售", "已售出", "已下架"];
+  var STATUSES = ["", "草稿", "在售", "已售出", "已下架", "交易中"];
 
   function statusText(value) {
     return STATUSES[value] || "未知状态";
   }
 
-  function statusBadge(value) {
-    var kind = value === 2 ? "badge-ok" : (value === 3 ? "badge-sold" : "badge");
+  /* 徽标配色，按状态枚举值索引，缺的落到默认灰。
+   *
+   * 交易中单独一支颜色而不是复用已售出的灰：它和已售出一样都不是错，但还会变回在售，
+   * 列表里两者挨着出现时得能一眼看出哪个还在动。 */
+  var BADGE_KINDS = { 2: "badge-ok", 3: "badge-sold", 5: "badge-trading" };
 
-    return '<span class="badge ' + kind + '">' + esc(statusText(value)) + '</span>';
+  function statusBadge(value) {
+    return '<span class="badge ' + (BADGE_KINDS[value] || "badge") + '">' +
+      esc(statusText(value)) + '</span>';
+  }
+
+  /* 账号状态。和商品状态是两张不同的枚举表，而且值会撞车：UserStatus 的 1 是「正常」、
+   * 2 是「已停用」，直接喂给上面的 statusText 会把停用显示成「在售」。
+   * 两边都从 1 开始、都是 tinyint，编译器不会拦，所以分开放。 */
+  var USER_STATUSES = ["", "正常", "已停用"];
+
+  function userStatusText(value) {
+    return USER_STATUSES[value] || "未知状态";
   }
 
   /* 分类是自引用树，接口给的是扁平表。转成带缩进的 <option>，够用且不用递归渲染。 */
@@ -145,6 +159,7 @@ window.NM = (function () {
     conditionOptions: conditionOptions,
     statusText: statusText,
     statusBadge: statusBadge,
+    userStatusText: userStatusText,
     categoryOptions: categoryOptions,
     areaOptions: areaOptions
   };

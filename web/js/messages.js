@@ -117,6 +117,71 @@ window.messages = (function ($) {
       '</div>';
   }
 
+  /* 交易面板：一句话说清现在到哪一步了，再加一个「该我做的动作」。
+   *
+   * 可操作性完全由服务端给的事实推出来，前端不预判——点了不该点的，服务端回一句中文 409。
+   * 这正是 ConversationTradeResponse 存在的理由：服务端给事实，客户端判按钮。
+   *
+   * detail.trade 为 null 表示商品已被硬删除，整块不出现。
+   * 不是本交易会话的那些线程，服务端把 acceptedAt 抹成 null，所以「这笔交易是不是我谈成的」
+   * 就等价于 acceptedAt != null——别人拿下的商品在他们自己的会话里看起来和在售没区别。 */
+  function tradeButton(action, label) {
+    return '<button class="button button-primary" data-action="trade-' + action + '">' +
+      NM.esc(label) + '</button>';
+  }
+
+  function tradeHtml(detail, myId) {
+    var trade = detail.trade;
+
+    if (!trade) {
+      return "";
+    }
+
+    // Published=2, Sold=3, InTransaction=5，和 STATUSES 同一套枚举值。
+    var status = trade.productStatus;
+    var mine = trade.proposedById === myId;
+    var note;
+    var action = "";
+
+    if (status === 2) {
+      if (!trade.proposedAt) {
+        note = "还没开始交易。任一方发起、另一方接受之后，商品进入交易中。";
+        action = tradeButton("propose", "发起交易");
+      } else if (mine) {
+        note = "你发起了交易，等待对方确认。一天内没有回应会自动取消。";
+      } else {
+        note = "对方发起了交易。";
+        action = tradeButton("accept", "接受交易");
+      }
+    } else if (status === 5 && trade.acceptedAt) {
+      note = "交易进行中。双方各确认一次就完成了。";
+
+      if (trade.buyerId === myId) {
+        action = trade.buyerConfirmedAt
+          ? '<span class="muted">你已确认收货，等待卖方确认收款。</span>'
+          : tradeButton("receipt", "确认收货");
+      } else {
+        action = trade.sellerConfirmedAt
+          ? '<span class="muted">你已确认收款，等待买方确认收货。</span>'
+          : tradeButton("payment", "确认收款");
+      }
+    } else if (status === 5) {
+      note = "这件商品正在和别人交易中。";
+    } else if (status === 3) {
+      note = trade.acceptedAt ? "交易已完成。" : "这件商品已经卖出了。";
+    } else {
+      // 草稿和已下架没有交易可谈，这一块整个不出现。
+      return "";
+    }
+
+    return '<div class="card trade-panel">' +
+      '<div class="trade-line">' + NM.statusBadge(status) +
+      '<span class="trade-note">' + NM.esc(note) + '</span></div>' +
+      (action ? '<div class="trade-actions">' + action + '</div>' : "") +
+      '<p id="trade-error"></p>' +
+      '</div>';
+  }
+
   function messageHtml(message, myId) {
     var mine = message.senderId === myId;
 
@@ -142,6 +207,7 @@ window.messages = (function ($) {
 
       $("#view").html(
         headHtml(detail) +
+        tradeHtml(detail, myId) +
         '<div class="card">' +
         '<div class="thread-messages" id="thread-messages">' +
         (messages.items.length
@@ -222,11 +288,50 @@ window.messages = (function ($) {
     });
   }
 
+  /* ---------- 交易动作 ---------- */
+
+  /* 四个按钮共用一个执行器：POST 一下，失败就把中文原因写回面板。
+   *
+   * 成功之后重拉整个会话而不是就地改 DOM——和服务端状态对齐的唯一做法，
+   * 和发消息那条路一样。重拉还会顺带把面板本身换成新状态，不用单独维护一套状态机。
+   *
+   * onDone 由 app.js 传进来（通知徽标刷新）。这里不直接调 notifications：
+   * 这个仓库的模块之间不互相调用，接线统一在 app.js。 */
+  var TRADE_PATHS = {
+    "trade-propose": "",
+    "trade-accept": "/accept",
+    "trade-receipt": "/receipt",
+    "trade-payment": "/payment"
+  };
+
+  function tradeAction(action, onDone) {
+    var id = currentThreadId();
+    var path = TRADE_PATHS[action];
+
+    if (!id || path === undefined) {
+      return;
+    }
+
+    $("#trade-error").empty();
+
+    api.post("/api/conversations/" + id + "/transaction" + path, null).then(function () {
+      showThread(id, {});
+
+      if (onDone) {
+        onDone();
+      }
+    }, function (error) {
+      // 「商品状态刚刚变了，请刷新重试。」这类都在这里显示。
+      $("#trade-error").html(NM.inlineError(error));
+    });
+  }
+
   return {
     showList: showList,
     showThread: showThread,
     send: send,
     start: start,
+    tradeAction: tradeAction,
     refreshUnread: refreshUnread
   };
 })(jQuery);

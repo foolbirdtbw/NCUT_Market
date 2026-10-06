@@ -92,6 +92,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// cleanup job deletes on that column, so stamping it on every save would keep abandoned drafts
     /// alive forever.
     /// </para>
+    /// <para>
+    /// <see cref="IHasVersion.Version"/> advances on <see cref="EntityState.Modified"/> alongside the
+    /// audit stamp. <c>Added</c> deliberately leaves it alone: a new row starts at whatever the column
+    /// default says, and a token that skipped its first value would be a worse lie than a repeat.
+    /// </para>
     /// </remarks>
     private void ApplyAuditTimestamps()
     {
@@ -118,6 +123,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                     if (entry.Entity is IHasUpdatedAt modifiedUpdatedAt)
                     {
                         modifiedUpdatedAt.UpdatedAt = now;
+                    }
+
+                    // Bumped here, and only here, for the same reason updated_at is: it is a rule
+                    // about every write to the row, not a decision any one caller is in a position to
+                    // make. An entity that is modified without this advancing would carry its old
+                    // token into the WHERE clause and pass a concurrency check it should have failed.
+                    if (entry.Entity is IHasVersion modifiedVersion)
+                    {
+                        modifiedVersion.Version++;
                     }
 
                     break;

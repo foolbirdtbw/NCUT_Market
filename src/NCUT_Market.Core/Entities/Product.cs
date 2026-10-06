@@ -2,7 +2,7 @@ using NCUT_Market.Core.Enums;
 
 namespace NCUT_Market.Core.Entities;
 
-public sealed class Product : IHasCreatedAt, IHasUpdatedAt
+public sealed class Product : IHasCreatedAt, IHasUpdatedAt, IHasVersion
 {
     public long Id { get; set; }
 
@@ -37,6 +37,51 @@ public sealed class Product : IHasCreatedAt, IHasUpdatedAt
     public DateTime? PublishedAt { get; set; }
 
     public DateTime? SoldAt { get; set; }
+
+    /// <summary>
+    /// The buyer of the trade accepted through the message thread, or null when there is none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what "sold to somebody" means, not <see cref="Status"/>.</b> A seller can still
+    /// mark a listing sold by hand, with no counterparty at all, from the detail page — so
+    /// <c>Status == Sold</c> covers both "a two-sided trade completed" and "the seller got rid of it".
+    /// Any query that needs the first has to test this column.
+    /// </para>
+    /// <para>
+    /// Which thread the trade came from is not stored: it is <c>(this listing, this buyer)</c>, and
+    /// the unique index on the conversation table means there is exactly one candidate. Trade actions
+    /// arrive addressed by thread id, so every one of them re-derives the pair and checks it — the
+    /// seller is a participant in all of their threads and would otherwise be able to confirm a trade
+    /// from an unrelated one.
+    /// </para>
+    /// </remarks>
+    public long? TransactionBuyerId { get; set; }
+
+    /// <summary>
+    /// When the proposal was accepted. The second of the flow's two clocks: <c>AcceptedAt + 1 day</c>
+    /// is when the sweep acts on a trade nobody has finished confirming.
+    /// </summary>
+    public DateTime? TransactionAcceptedAt { get; set; }
+
+    /// <summary>
+    /// When the buyer confirmed receipt. Doubles as the flag — null means "not yet".
+    /// </summary>
+    public DateTime? BuyerConfirmedAt { get; set; }
+
+    /// <summary>When the seller confirmed payment. See <see cref="BuyerConfirmedAt"/>.</summary>
+    public DateTime? SellerConfirmedAt { get; set; }
+
+    /// <summary>
+    /// Optimistic-concurrency token, bumped by <c>AppDbContext</c> on every update.
+    /// </summary>
+    /// <remarks>
+    /// The trade flow is the first thing in this project where two people write the same row at the
+    /// same time on purpose, and every one of its transitions is a read-modify-write. Without this,
+    /// a buyer accepting a proposal at the instant the sweep is rolling it back leaves a listing
+    /// marked "交易中" with no buyer — a live trade with no counterparty. See <see cref="IHasVersion"/>.
+    /// </remarks>
+    public uint Version { get; set; }
 
     public User Seller { get; set; } = null!;
 

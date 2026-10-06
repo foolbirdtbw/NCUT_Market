@@ -27,7 +27,9 @@ namespace NCUT_Market.Api.Controllers;
 [ApiController]
 [Route("api/conversations")]
 [Authorize]
-public sealed class ConversationsController(IConversationService conversationService) : ControllerBase
+public sealed class ConversationsController(
+    IConversationService conversationService,
+    ITransactionService transactionService) : ControllerBase
 {
     /// <summary>The signed-in user's threads, most recently active first.</summary>
     /// <param name="pagination">Page and page size. Out-of-range values are clamped, not rejected.</param>
@@ -166,6 +168,107 @@ public sealed class ConversationsController(IConversationService conversationSer
     public async Task<IActionResult> MarkRead(long id, CancellationToken cancellationToken)
     {
         var result = await conversationService.MarkReadAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
+    /// <summary>Offers to buy, from inside a thread. The listing stays on sale.</summary>
+    /// <param name="id">Thread id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Proposed.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="404">No such thread, or the caller is not in it.</response>
+    /// <response code="409">The listing is not on sale, or this thread already has a proposal out.</response>
+    /// <remarks>
+    /// The trade actions live on this controller rather than one of their own because a proposal's
+    /// identity <em>is</em> the thread — that is where it is stored, and the membership check this
+    /// controller already performs is the same one they all need.
+    /// <para>
+    /// 204 and no body: the client's next move is to re-read the thread, which returns the updated
+    /// trade facts along with the messages. Returning a partial view of the thread here would be a
+    /// second shape of the same resource for the frontend to keep in step.
+    /// </para>
+    /// </remarks>
+    [HttpPost("{id:long}/transaction")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ProposeTrade(long id, CancellationToken cancellationToken)
+    {
+        var result = await transactionService.ProposeAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
+    /// <summary>Takes up the offer in a thread, putting the listing into 交易中.</summary>
+    /// <param name="id">Thread id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Accepted.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="404">No such thread, or the caller is not in it.</response>
+    /// <response code="409">
+    /// There is no offer here, it was the caller's own, it has expired, or the listing is no longer on
+    /// sale — the last of which is also what losing a race to another buyer reports.
+    /// </response>
+    [HttpPost("{id:long}/transaction/accept")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AcceptTrade(long id, CancellationToken cancellationToken)
+    {
+        var result = await transactionService.AcceptAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
+    /// <summary>The buyer confirms receipt. Completes the trade if the seller has confirmed.</summary>
+    /// <param name="id">Thread id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Recorded.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="403">The caller is not the buyer of this trade.</response>
+    /// <response code="404">No such thread, or the caller is not in it.</response>
+    /// <response code="409">There is no live trade, or it did not come from this thread.</response>
+    [HttpPost("{id:long}/transaction/receipt")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ConfirmReceipt(long id, CancellationToken cancellationToken)
+    {
+        var result = await transactionService.ConfirmReceiptAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
+    /// <summary>The seller confirms payment. Completes the trade if the buyer has confirmed.</summary>
+    /// <param name="id">Thread id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Recorded.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="403">The caller is not the seller.</response>
+    /// <response code="404">No such thread, or the caller is not in it.</response>
+    /// <response code="409">There is no live trade, or it did not come from this thread.</response>
+    [HttpPost("{id:long}/transaction/payment")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ConfirmPayment(long id, CancellationToken cancellationToken)
+    {
+        var result = await transactionService.ConfirmPaymentAsync(id, User.GetUserId(), cancellationToken);
 
         return result.Succeeded
             ? NoContent()

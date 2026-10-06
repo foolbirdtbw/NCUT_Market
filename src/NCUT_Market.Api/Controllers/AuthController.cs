@@ -71,6 +71,48 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
             : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
     }
 
+    /// <summary>Redeems a reset code for a new password, and signs the account in.</summary>
+    /// <param name="request">The username, the code an administrator handed over, and the new password.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="200">The password was changed, with a token ready to use.</response>
+    /// <response code="400">A field was missing or out of range.</response>
+    /// <response code="401">The code is wrong, has been used, has lapsed, or no such username exists.</response>
+    /// <response code="403">The code was right but the account is disabled.</response>
+    /// <remarks>
+    /// <para>
+    /// The self-service half of password recovery, and the reason no email or phone number is needed:
+    /// an administrator verifies who the user is in person and mints the code, and the user picks a
+    /// password here that the administrator never sees.
+    /// </para>
+    /// <para>
+    /// Deliberately under <c>/api/auth</c> rather than <c>/api/users</c>: the caller is the account
+    /// holder with no token, not an administrator. It answers with a token for the same reason
+    /// <see cref="Register"/> does — the user has just proved who they are, and making them sign in
+    /// again would be a second round trip to learn nothing new.
+    /// </para>
+    /// <para>
+    /// Failures are <c>INVALID_CREDENTIALS</c> and not <c>UNAUTHORIZED</c>, which matters on the client:
+    /// <c>web/js/api.js</c> treats a 401 carrying any other code as an expired token and signs the user
+    /// out, so a mistyped code would evict a user who was signed in.
+    /// </para>
+    /// </remarks>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType<AuthResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<AuthResponse>> ResetPassword(
+        [FromBody] CompleteResetRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.CompleteResetAsync(request, cancellationToken);
+
+        return result.Succeeded
+            ? Ok(result.Value)
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
     /// <summary>The account the request's token belongs to.</summary>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
     /// <response code="200">The account.</response>

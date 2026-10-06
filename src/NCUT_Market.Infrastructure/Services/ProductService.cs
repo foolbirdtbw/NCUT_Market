@@ -22,15 +22,6 @@ internal sealed class ProductService(
     /// <summary>Largest single upload accepted, in bytes.</summary>
     private const int MaxImageBytes = 5 * 1024 * 1024;
 
-    /// <summary>
-    /// Character that makes the next character literal inside a <c>LIKE</c> pattern.
-    /// </summary>
-    /// <remarks>
-    /// Backslash, because it is already MySQL's default <c>LIKE</c> escape and so behaves the same
-    /// whether or not the <c>ESCAPE</c> clause survives translation.
-    /// </remarks>
-    private const string LikeEscape = "\\";
-
     private readonly StorageOptions _storage = storageOptions.Value;
 
     /// <summary>
@@ -67,20 +58,24 @@ internal sealed class ProductService(
         PaginationQuery pagination,
         CancellationToken cancellationToken = default)
     {
+        // InTransaction belongs here as much as Published does. A listing with a trade agreed in
+        // progress stays in the feed on purpose: the other people already talking about it must not
+        // watch it vanish, and a badge says what it is. Deliberately only these two — Sold stays out,
+        // as it always has.
         var products = dbContext.Products
             .AsNoTracking()
-            .Where(x => x.Status == ProductStatus.Published);
+            .Where(x => x.Status == ProductStatus.Published || x.Status == ProductStatus.InTransaction);
 
         if (!string.IsNullOrWhiteSpace(query.Q))
         {
-            var pattern = "%" + EscapeLike(query.Q.Trim()) + "%";
+            var pattern = LikePattern.Contains(query.Q.Trim());
 
             // Title or description, so a search for a colour or a brand mentioned only in the body
             // still finds the listing. Case is handled by the column collation
             // (utf8mb4_0900_ai_ci, case-insensitive), not here.
             products = products.Where(x =>
-                EF.Functions.Like(x.Title, pattern, LikeEscape) ||
-                (x.Description != null && EF.Functions.Like(x.Description, pattern, LikeEscape)));
+                EF.Functions.Like(x.Title, pattern, LikePattern.Escape) ||
+                (x.Description != null && EF.Functions.Like(x.Description, pattern, LikePattern.Escape)));
         }
 
         if (query.CategoryId is long categoryId)
@@ -157,7 +152,7 @@ internal sealed class ProductService(
         var product = await dbContext.Products
             .AsNoTracking()
             .Where(x => x.Id == id)
-            .Select(DetailProjection)
+            .Select(DetailProjection(AppDbContext.AuditNow.AddDays(-InterestedWindowDays)))
             .FirstOrDefaultAsync(cancellationToken);
 
         if (product is null)
@@ -169,7 +164,13 @@ internal sealed class ProductService(
 
         // A listing that is not live is not merely hidden from the feed, it is invisible: reported
         // as not-found rather than forbidden, so guessing an id does not confirm that a draft exists.
-        var isVisible = product.Status is ProductStatus.Published or ProductStatus.Sold;
+        //
+        // InTransaction is in the visible set for the same reason it is in the feed filter. The whole
+        // point of the state is that the listing does not disappear from under the people discussing
+        // it, and that only works if the page they are looking at still opens.
+        var isVisible = product.Status is ProductStatus.Published
+            or ProductStatus.Sold
+            or ProductStatus.InTransaction;
 
         if (!isVisible && product.SellerId != viewerId)
         {
@@ -317,6 +318,13 @@ internal sealed class ProductService(
                 "只有在售中的商品才能下架。");
         }
 
+        if (await HasPendingProposalAsync(id, cancellationToken))
+        {
+            return OperationResult<ProductDetailResponse>.Failure(
+                ErrorCodes.InvalidState,
+                "有人正在跟你谈这个商品的交易，先处理它再下架。");
+        }
+
         product.Status = ProductStatus.Offline;
         product.LastActivityAt = AppDbContext.AuditNow;
 
@@ -344,6 +352,20 @@ internal sealed class ProductService(
                 "只有在售中的商品才能标记为已售出。");
         }
 
+        // The hand-sold shortcut stays, for a deal closed in person with no thread behind it. It must
+        // not, however, run over an offer somebody is waiting on an answer to: that would sell the
+        // listing out from under a negotiation the platform is in the middle of brokering, and leave
+        // a proposal pointing at an item that is gone.
+        if (await HasPendingProposalAsync(id, cancellationToken))
+        {
+            return OperationResult<ProductDetailResponse>.Failure(
+                ErrorCodes.InvalidState,
+                "有人正在跟你谈这个商品的交易，先去私信里处理它。");
+        }
+
+        // Deliberately leaves every Transaction* column alone. Status == Sold with a null
+        // TransactionBuyerId is exactly what "sold to nobody in particular" means, and it is what
+        // tells the thread view not to draw a trade panel over this listing.
         product.Status = ProductStatus.Sold;
         product.SoldAt = AppDbContext.AuditNow;
         product.LastActivityAt = AppDbContext.AuditNow;
@@ -374,9 +396,19 @@ internal sealed class ProductService(
                 "请先下架，再删除。");
         }
 
+        // Reachable even though the status is Draft or Offline: a listing can be taken down while an
+        // offer is still sitting unanswered in somebody's thread, and deleting it would leave that
+        // proposal addressing a product that no longer exists.
+        if (await HasPendingProposalAsync(id, cancellationToken))
+        {
+            return OperationResult<bool>.Failure(
+                ErrorCodes.InvalidState,
+                "有人正在跟你谈这个商品的交易，先去私信里处理它。");
+        }
+
         var keys = await dbContext.ProductImages
             .Where(x => x.ProductId == id)
-            .Select(x => new StoredImage(x.OriginalKey, x.LargeKey, x.MediumKey, x.ThumbnailKey, 0, 0, 0, string.Empty))
+            .Select(x => new StoredImage(x.LargeKey, x.MediumKey, x.ThumbnailKey, 0, 0, 0, string.Empty))
             .ToListAsync(cancellationToken);
 
         // The image rows go with the product through the cascade; the files do not, so they are
@@ -452,7 +484,6 @@ internal sealed class ProductService(
         var image = new ProductImage
         {
             ProductId = productId,
-            OriginalKey = stored.OriginalKey,
             LargeKey = stored.LargeKey,
             MediumKey = stored.MediumKey,
             ThumbnailKey = stored.ThumbnailKey,
@@ -504,7 +535,7 @@ internal sealed class ProductService(
         }
 
         var stored = new StoredImage(
-            image.OriginalKey, image.LargeKey, image.MediumKey, image.ThumbnailKey,
+            image.LargeKey, image.MediumKey, image.ThumbnailKey,
             image.Width, image.Height, image.FileSize, image.MimeType);
 
         dbContext.ProductImages.Remove(image);
@@ -517,10 +548,24 @@ internal sealed class ProductService(
         return OperationResult<bool>.Success(true);
     }
 
+    /// <summary>How far back the "recently asked about" count on the detail page looks.</summary>
+    private const int InterestedWindowDays = 7;
+
     /// <summary>
     /// The detail projection, including the photo list.
     /// </summary>
-    private static readonly Expression<Func<Product, ProductDetailResponse>> DetailProjection =
+    /// <param name="interestedSince">
+    /// Cutoff for the "recently asked about" count, supplied by the caller because the projection is
+    /// an expression tree and cannot read a clock — the same reason
+    /// <c>ConversationService.Summaries</c> closes over the caller's id.
+    /// </param>
+    /// <remarks>
+    /// The two counts are a correlated <c>COUNT</c> each, and they are the first in this file — the
+    /// projections so far have only ever selected scalars or first-of-a-collection. That is fine
+    /// against the unique index on <c>(product_id, buyer_id)</c> and only ever runs for a single row.
+    /// </remarks>
+    private static Expression<Func<Product, ProductDetailResponse>> DetailProjection(
+        DateTime interestedSince) =>
         product => new ProductDetailResponse(
             product.Id,
             product.SellerId,
@@ -547,7 +592,17 @@ internal sealed class ProductService(
                 .ToList(),
             product.CreatedAt,
             product.PublishedAt,
-            product.SoldAt);
+            product.SoldAt,
+
+            // One thread per prospective buyer — StartAsync is find-or-create against a unique index
+            // on (product_id, buyer_id) — so this is a count of distinct people, which is what the
+            // page says it is.
+            product.Conversations.Count(),
+
+            // LastMessageAt rather than a scan of messages: the column is written when the thread is
+            // created and on every message, so it already answers "has anyone said anything here
+            // lately" without touching the messages table.
+            product.Conversations.Count(conversation => conversation.LastMessageAt >= interestedSince));
 
     private static IQueryable<Product> Order(IQueryable<Product> products, ProductSort sort) => sort switch
     {
@@ -590,6 +645,19 @@ internal sealed class ProductService(
 
         return (product, null, null);
     }
+
+    /// <summary>
+    /// Whether anybody is waiting on the seller to answer a trade proposal on this listing.
+    /// </summary>
+    /// <remarks>
+    /// A plain existence check over the unique index on <c>(product_id, buyer_id)</c>. It is not part
+    /// of the same transaction as the write it guards, so a proposal landing in the gap would slip
+    /// past — the window is milliseconds wide, a proposal cannot be made on a listing that is already
+    /// down, and the worst outcome is a stale proposal that expires on its own within the day.
+    /// </remarks>
+    private async Task<bool> HasPendingProposalAsync(long productId, CancellationToken cancellationToken) =>
+        await dbContext.Conversations
+            .AnyAsync(x => x.ProductId == productId && x.TransactionProposedAt != null, cancellationToken);
 
     /// <summary>
     /// Checks that the category and dormitory area exist and are active.
@@ -652,19 +720,6 @@ internal sealed class ProductService(
 
         return resolved;
     }
-
-    /// <summary>
-    /// Makes <c>%</c>, <c>_</c> and the escape character itself literal in a <c>LIKE</c> pattern.
-    /// </summary>
-    /// <remarks>
-    /// The backslash is replaced first. Doing it after would escape the backslashes this method had
-    /// just inserted, so a search for <c>100%</c> would become <c>%100\\\%%</c> and match
-    /// everything — a wrong answer that looks like a working search.
-    /// </remarks>
-    private static string EscapeLike(string term) => term
-        .Replace("\\", "\\\\")
-        .Replace("%", "\\%")
-        .Replace("_", "\\_");
 
     /// <summary>
     /// Reads a stream, refusing anything over the limit without buffering the whole upload first.

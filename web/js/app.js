@@ -18,12 +18,16 @@
     [/^\/mine$/, function (match, query) { products.showMine(query); }],
     [/^\/messages$/, function (match, query) { messages.showList(query); }],
     [/^\/messages\/(\d+)$/, function (match, query) { messages.showThread(match[1], query); }],
+    [/^\/notifications$/, function (match, query) { notifications.showList(query); }],
     [/^\/announcements$/, function (match, query) { announcements.showList(query); }],
     [/^\/login$/, function () { auth.showLogin(); }],
     [/^\/register$/, function () { auth.showRegister(); }],
+    [/^\/forgot$/, function () { auth.showForgot(); }],
     // query 要传下去：宿舍区那页是分页的，不传的话翻到第 2 页再点刷新就跳回第 1 页。
     [/^\/categories$/, function () { dictionaries.showCategories(); }],
-    [/^\/dormitory-areas$/, function (match, query) { dictionaries.showDormitoryAreas(query); }]
+    [/^\/dormitory-areas$/, function (match, query) { dictionaries.showDormitoryAreas(query); }],
+    // 关键字和页码同理，都在 query 里。
+    [/^\/users$/, function (match, query) { users.showUsers(query); }]
   ];
 
   /* hash 拆成路径和查询串两半。筛选条件放在查询串里，所以刷新和后退都能回到同一页。 */
@@ -83,14 +87,15 @@
     $("#site-nav a[href='#" + path + "']").addClass("is-active").attr("aria-current", "page");
   }
 
-  /* 分类和宿舍区的管理入口只给管理员看。藏的是导航两条链接和首页那两张入口卡，
-   * 不是访问控制——路由守卫在 dictionaries.js 里，接口那边的判定在服务端。 */
+  /* 管理入口只给管理员看。藏的是导航三条链接和首页那几张入口卡，
+   * 不是访问控制——路由守卫在 dictionaries.js / users.js 里，接口那边的判定在服务端。 */
   function paintAdminNav() {
     var current = auth.user();
     var admin = !!current && current.role === 2;
 
     $("#nav-categories").toggle(admin);
     $("#nav-dormitory-areas").toggle(admin);
+    $("#nav-users").toggle(admin);
     $("#admin-entries").toggle(admin);
   }
 
@@ -111,6 +116,8 @@
       '<strong>分类字典</strong><span>GET /api/categories</span></a>' +
       '<a class="card entry-card" href="#/dormitory-areas">' +
       '<strong>宿舍区字典</strong><span>GET /api/dormitory-areas</span></a>' +
+      '<a class="card entry-card" href="#/users">' +
+      '<strong>用户管理</strong><span>忘了密码的人来这里领重置码</span></a>' +
       '</div>');
   }
 
@@ -137,40 +144,38 @@
     paintThemeButton();
   }
 
-  /* ---------- 页脚计数器 ---------- */
+  /* ---------- 页脚的在线人数 ---------- */
 
-  /* 千禧年门户的标配。纯装饰：数字存在 localStorage 里，每加载一次加一，
-   * 不接任何真实统计——刷新几遍就会发现自己「访问」了好多次。
-   * 拿不到 localStorage 就渲染 000000，不报错也不留空白。 */
-  function paintVisitCounter() {
-    var slot = $("#visit-counter");
-
-    if (!slot.length) {
-      return;
-    }
-
-    var count = 0;
-
-    try {
-      count = parseInt(localStorage.getItem("ncut.visits"), 10) || 0;
-    } catch (e) {
-      // 无痕模式下 localStorage 可能直接抛异常。计数是装饰，不必为此中断启动。
-    }
-
-    count++;
-
-    try {
-      localStorage.setItem("ncut.visits", String(count));
-    } catch (e) { }
-
-    var text = String(count);
+  /* 六位数字，一位一格——千禧年门户计数器那个长相，等宽由 CSS 的 .online-count span 给。
+   * 字符只可能是 0-9，所以这里不需要 esc()。
+   *
+   * 兜底成 0 而不是留着原样：接口要是挂了、字段改了名、或者回了个 {}，data.onlineCount 就是
+   * undefined，直接补零会得到 "00undefined" ——页脚上会是几个莫名其妙的方格。 */
+  function visitDigits(count) {
+    var text = String(Math.max(0, Math.floor(Number(count) || 0)));
 
     while (text.length < 6) {
       text = "0" + text;
     }
 
-    // 一格一位。字符只可能是 0-9，所以这里不需要 esc()。
-    slot.html(text.replace(/./g, "<span>$&</span>"));
+    return text.replace(/./g, "<span>$&</span>");
+  }
+
+  /* 这个数是「最近几分钟内有请求的活跃账号」，不是「此刻开着页面的人」。JWT 没有会话，
+   * 没登录的游客在服务端认不出来是谁，所以算不进去——页脚那句说明就是为这个写的。
+   *
+   * 不轮询：和未读徽标一样只在页面加载时拉一次，所以它是一个快照，坐着不动就不会变。
+   * 拉不到就留空——宁可什么都没有，也不要显示一个编出来的 0。 */
+  function paintOnlineCount() {
+    var slot = $("#online-count");
+
+    if (!slot.length) {
+      return;
+    }
+
+    api.get("/api/online/count").then(function (data) {
+      slot.html(visitDigits(data.onlineCount));
+    }, function () { });
   }
 
   /* ---------- 事件：委托在 document 上，绑一次 ---------- */
@@ -199,6 +204,10 @@
       event.preventDefault();
       auth.submitRegister();
     })
+    .on("submit", "#forgot-form", function (event) {
+      event.preventDefault();
+      auth.submitForgot();
+    })
     .on("click", "[data-action='sign-out']", function () {
       auth.signOut();
       location.hash = "#/products";
@@ -211,12 +220,23 @@
     .on("click", "[data-action='delete-image']", function () {
       products.deleteImage($(this).attr("data-image-id"));
     })
+    .on("click", "#generate-cover", function () { products.generateCover(); })
+    .on("click", "[data-action='discard-cover']", function () { products.discardCover(); })
     .on("click", "[data-action='contact-seller']", function () {
       messages.start($(this).attr("data-product-id"));
     })
     .on("submit", "#message-form", function (event) {
       event.preventDefault();
       messages.send();
+    })
+    /* 四个交易动作一个处理函数。按钮在 messages.js 里渲染，路径表也在那边，
+     * 这里只负责把点击转发过去，并把通知徽标的刷新接上——交易动作会给双方都写通知，
+     * 包括我自己。 */
+    .on("click", "[data-action^='trade-']", function () {
+      messages.tradeAction($(this).attr("data-action"), notifications.refreshUnread);
+    })
+    .on("click", "[data-action='open-notification']", function () {
+      notifications.open($(this).attr("data-notification-id"));
     })
     .on("submit", "#announcement-form", function (event) {
       event.preventDefault();
@@ -253,7 +273,17 @@
     })
     .on("click", "[data-action='delete-area']", function () {
       dictionaries.deleteArea($(this).attr("data-area-id"));
-    });
+    })
+    .on("submit", "#user-search-form", function (event) {
+      event.preventDefault();
+      users.submitSearch();
+    })
+    .on("click", "[data-action='clear-user-search']", function () { users.clearSearch(); })
+    .on("click", "[data-action='reset-password']", function () {
+      users.issueResetCode($(this).attr("data-user-id"));
+    })
+    .on("click", "[data-action='copy-reset-code']", function () { users.copyResetCode(); })
+    .on("click", "[data-action='dismiss-reset-code']", function () { users.dismissResetCode(); });
 
   /* 编辑表单提交时要知道改的是哪个 id。事件是委托的，处理函数不在渲染时的闭包里，
    * 所以从 hash 现读。 */
@@ -267,7 +297,7 @@
 
   $(function () {
     paintThemeButton();
-    paintVisitCounter();
+    paintOnlineCount();
 
     /* 未读徽标和管理入口都跟着登录状态走。注册这两个回调就够：下面的 auth.refresh() 会走
      * paint()，之后的登录、退出也都走同一处。
@@ -275,6 +305,7 @@
      * 注意 paint() 是 callback() 无参调的，所以 paintAdminNav 自己读 auth.user()，
      * 不能指望参数里有当前用户。 */
     auth.onUserChanged(messages.refreshUnread);
+    auth.onUserChanged(notifications.refreshUnread);
     auth.onUserChanged(paintAdminNav);
 
     announcements.refreshBar();

@@ -69,7 +69,10 @@ internal sealed class ConversationService(
         var product = await dbContext.Products
             .AsNoTracking()
             .Where(x => x.Id == request.ProductId
-                && (x.Status == ProductStatus.Published || x.Status == ProductStatus.Sold || x.SellerId == buyerId))
+                && (x.Status == ProductStatus.Published
+                    || x.Status == ProductStatus.Sold
+                    || x.Status == ProductStatus.InTransaction
+                    || x.SellerId == buyerId))
             .Select(x => new
             {
                 x.Id,
@@ -159,6 +162,19 @@ internal sealed class ConversationService(
                 x.ProductId,
                 x.ProductTitle,
                 x.ProductThumbnailKey,
+                x.BuyerId,
+                x.TransactionProposedById,
+                x.TransactionProposedAt,
+
+                // Read raw and interpreted below rather than filtered here: the "is this thread the
+                // trade" test compares two of these columns against each other, which reads better as
+                // one line in C# than as a repeated conditional inside a projection.
+                ProductStatus = x.Product == null ? (ProductStatus?)null : x.Product.Status,
+                TradeBuyerId = x.Product == null ? (long?)null : x.Product.TransactionBuyerId,
+                AcceptedAt = x.Product == null ? (DateTime?)null : x.Product.TransactionAcceptedAt,
+                BuyerConfirmedAt = x.Product == null ? (DateTime?)null : x.Product.BuyerConfirmedAt,
+                SellerConfirmedAt = x.Product == null ? (DateTime?)null : x.Product.SellerConfirmedAt,
+
                 PeerId = x.BuyerId == userId ? x.SellerId : x.BuyerId,
                 PeerNickname = x.BuyerId == userId ? x.Seller.Nickname : x.Buyer.Nickname
             })
@@ -187,6 +203,28 @@ internal sealed class ConversationService(
 
         messages.Reverse();
 
+        ConversationTradeResponse? trade = null;
+
+        // Null once the listing has been hard-deleted. The thread survives that by design, and stays
+        // readable, but there is nothing left in it to trade.
+        if (header.ProductStatus is ProductStatus status)
+        {
+            // Only the thread the trade actually came from gets to see the confirmation columns. From
+            // any other buyer's thread a taken listing looks the same as one the seller took down,
+            // which is the truth from where they are standing: they have no trade, and there is
+            // nothing for them to confirm. It is also what stops a stranger's thread leaking who won.
+            var isTradeThread = header.TradeBuyerId == header.BuyerId;
+
+            trade = new ConversationTradeResponse(
+                status,
+                header.BuyerId,
+                header.TransactionProposedById,
+                header.TransactionProposedAt,
+                isTradeThread ? header.AcceptedAt : null,
+                isTradeThread ? header.BuyerConfirmedAt : null,
+                isTradeThread ? header.SellerConfirmedAt : null);
+        }
+
         return OperationResult<ConversationDetailResponse>.Success(new ConversationDetailResponse(
             header.Id,
             header.ProductId,
@@ -194,7 +232,8 @@ internal sealed class ConversationService(
             ToUrl(header.ProductThumbnailKey),
             header.PeerId,
             header.PeerNickname,
-            pagination.ToResult(messages, totalCount)));
+            pagination.ToResult(messages, totalCount),
+            trade));
     }
 
     public async Task<OperationResult<MessageResponse>> SendAsync(

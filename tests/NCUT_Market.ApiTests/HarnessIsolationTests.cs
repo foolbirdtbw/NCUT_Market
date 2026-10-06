@@ -67,4 +67,32 @@ public sealed class HarnessIsolationTests(ApiFixture fixture) : IClassFixture<Ap
             uploadRoot.StartsWith(repositoryRoot, StringComparison.OrdinalIgnoreCase),
             $"Upload root '{uploadRoot}' is inside the repository; it should be under the temp directory.");
     }
+
+    /// <summary>
+    /// The background sweep is off for the whole test run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>WebApplicationFactory&lt;Program&gt;</c> runs the real <c>Program.cs</c>, so
+    /// <c>AddHostedService</c> really does start the sweep timer. Against this shared, never-cleaned
+    /// database that means a background task resolving its own scope and rolling back trades — every
+    /// fifteen minutes, from every test class — while other tests are midway through asserting on
+    /// them. The failures would look like bugs in <c>TransactionService</c>.
+    /// </para>
+    /// <para>
+    /// Asserted rather than trusted, because the mechanism is a <c>PostConfigure</c> on an options
+    /// object that nothing else in the fixture touches. Delete that one line and every other test in
+    /// this project still passes, most of the time.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Background_jobs_are_disabled_under_the_test_host()
+    {
+        using var scope = fixture.Services.CreateScope();
+        var options = scope.ServiceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<NCUT_Market.Infrastructure.Jobs.BackgroundJobsOptions>>()
+            .Value;
+
+        Assert.False(options.Enabled);
+    }
 }

@@ -15,6 +15,10 @@ namespace NCUT_Market.Core.DTOs.Messages;
 /// The <em>most recent</em> page of the thread, in chronological order — oldest first within the
 /// page, so the frontend can append to the bottom without reversing anything.
 /// </param>
+/// <param name="Trade">
+/// The trade on the listing, or null once the listing has been hard-deleted. Never null otherwise,
+/// even when no proposal exists — the status is what tells a client whether it may propose at all.
+/// </param>
 /// <remarks>
 /// <para>
 /// The paging is over descending ids and then reversed, not over ascending ids. Taking
@@ -35,4 +39,5 @@ public sealed record ConversationDetailResponse(
     string? ProductThumbnailUrl,
     long PeerId,
     string PeerNickname,
-    PagedResult<MessageResponse> Messages);
+    PagedResult<MessageResponse> Messages,
+    ConversationTradeResponse? Trade);

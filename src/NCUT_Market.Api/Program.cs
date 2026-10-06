@@ -8,7 +8,9 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using NCUT_Market.Api.Configuration;
 using NCUT_Market.Api.Errors;
+using NCUT_Market.Api.Extensions;
 using NCUT_Market.Core.Common;
+using NCUT_Market.Core.Services;
 using NCUT_Market.Infrastructure;
 using NCUT_Market.Infrastructure.Security;
 using NCUT_Market.Infrastructure.Storage;
@@ -200,6 +202,29 @@ app.UseStaticFiles(new StaticFileOptions
 // contract, and before the endpoints so every mapped route sees the principal.
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Every request carrying a valid token stamps its account as seen. This is the only writer of
+// users.last_seen_at, and the footer's online counter is its only reader.
+//
+// Here rather than in a middleware class: it is the same shape as UseAuthentication and the eight
+// lines below are the whole of it, so a file and a DI registration would be ceremony around nothing.
+// Anonymous requests cost nothing — no principal, no write — and the principal is only established
+// because this sits after UseAuthentication. Before the endpoints, so it applies to every mapped
+// route rather than to the handful that remember to ask.
+//
+// No try/catch on purpose. If MySQL is unreachable then every endpoint in this API fails anyway, so a
+// failure here is not a new way for the site to return 500 — it is the same failure, one step earlier.
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true)
+    {
+        var onlineService = context.RequestServices.GetRequiredService<IOnlineService>();
+
+        await onlineService.TouchAsync(context.User.GetUserId(), context.RequestAborted);
+    }
+
+    await next();
+});
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 

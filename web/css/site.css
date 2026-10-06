@@ -137,7 +137,8 @@ code,
 .num,
 .product-price,
 .detail-price,
-.visit-counter span {
+.online-count span,
+.reset-code {
   font-family: ui-monospace, Consolas, "Courier New", monospace;
   font-variant-numeric: tabular-nums;
 }
@@ -346,6 +347,11 @@ textarea { resize: vertical; }
 .badge-ok { border-color: var(--success); color: var(--success); }
 .badge-bad { border-color: var(--danger); color: var(--danger); }
 .badge-sold { border-color: var(--danger); color: var(--danger); }
+/* 交易中用链接色。绿（在售）和红（已售出）之外只剩蓝，而且蓝本来就表示「还没完」，
+   正好对上交易中会变回在售这件事。 */
+.badge-trading { border-color: var(--accent); color: var(--accent); }
+/* 用户有待使用的重置码。和「交易中」一样是「还在动」的状态，所以同一个颜色。 */
+.badge-pending { border-color: var(--accent); color: var(--accent); }
 
 .loading { padding: 24px 0; text-align: center; color: var(--muted); }
 .empty { padding: 24px 0; text-align: center; color: var(--muted); }
@@ -458,6 +464,16 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .field-stack label { font-weight: 700; }
 
 .hint { color: var(--muted); font-size: 12px; }
+
+/* 用标题生成的那张封面的预览。不设宽度的话 800x800 的原图会按原始尺寸铺开，
+   在表单里是一整屏。 */
+.cover-preview {
+  display: block;
+  width: 160px;
+  height: 160px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+}
 
 .form-error {
   padding: 8px 10px;
@@ -701,6 +717,48 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .thread-form textarea { flex: 1; resize: vertical; }
 .thread-more { margin: 6px 0 0; font-size: 12px; }
 
+/* ---------- 私信：交易面板 ---------- */
+
+/* 放在消息列表上面，不随消息滚动——要点的按钮不能藏在 55vh 的滚动区里。 */
+.trade-panel { margin-bottom: 12px; }
+
+.trade-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 状态徽标是定宽的方框，说明文字跟着它走；窄屏上换行而不是把徽标挤扁。 */
+.trade-note { min-width: 0; }
+
+.trade-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+
+/* 详情页那两个询问人数。比 detail-meta 弱一档：它是背景信息，不是商品属性。 */
+.detail-interest { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+
+/* ---------- 通知页 ---------- */
+
+.notice-list { display: flex; flex-direction: column; }
+
+.notice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.notice-item:last-child { border-bottom: none; }
+
+/* 整行可点（点击即标已读），所以行本身给手型，里面的链接不额外再强调。 */
+.notice-item[data-action] { cursor: pointer; }
+
+.notice-glyph { flex: none; width: 22px; text-align: center; }
+
+.notice-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.notice-title { font-weight: 700; }
+.notice-content { color: var(--text); word-break: break-word; }
+.notice-meta { color: var(--muted); font-size: 12px; }
+
+/* 未读用左侧竖条，和会话列表的方块呼应但不重复——两种列表挨着看不会混。 */
+.notice-item.is-unread { border-left: 3px solid var(--danger); padding-left: 7px; }
+
 /* ---------- 公告页 ---------- */
 
 .announcement-list { list-style: none; margin: 0; padding: 0; }
@@ -713,11 +771,30 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
 .announcement-body { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
 
+/* ---------- 用户管理页 ---------- */
+
+/* 重置码那块要跳出页面——管理员整页就为了抄这一串，错过它就得重发一个。
+   所以这里只加粗边框，仍是 1px 实线和零阴影，不越纪律。 */
+.reset-card { border-width: 3px; }
+
+.reset-code {
+  margin: 12px 0;
+  padding: 14px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-align: center;
+  /* 点一下选中整串。剪贴板 API 拿不到时（非安全上下文、权限被拒）这是唯一的退路。 */
+  user-select: all;
+}
+
 /* ---------- 页脚 ---------- */
 
-/* 访问计数器。数字由 app.js 填进来，每格一个 <span>，此处只留等宽数字的排布。
-   纯装饰，读的是 localStorage，不接任何真实统计。 */
-.visit-counter {
+/* 在线人数。数字由 app.js 拉 /api/online/count 填进来，每格一个 <span>，此处只留等宽数字的
+   排布。拉不到就是空的，所以这里不能靠 :empty 之类去做占位——空的页脚是预期状态。 */
+.online-count {
   display: inline-flex;
   margin-left: 6px;
   border: 1px solid var(--border);
@@ -727,6 +804,13 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   vertical-align: middle;
   font-weight: 700;
   letter-spacing: 2px;
+}
+
+/* 「近 5 分钟有活动的登录用户」。不加这句的话，光一个六位数没人知道它数的是什么，
+   很容易被读成「此刻在线」甚至「累计访问」。 */
+.online-note {
+  margin-left: 6px;
+  color: var(--muted);
 }
 
 /* ---------- 响应式 ---------- */

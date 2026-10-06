@@ -28,10 +28,13 @@
         <a href="#/mine">我的商品</a>
         <!-- 未读数由 messages.js 追加在这条里面。导航是静态的，所以徽标不怕被重绘冲掉。 -->
         <a href="#/messages" id="nav-messages">私信</a>
+        <!-- 同上，徽标由 notifications.js 追加。 -->
+        <a href="#/notifications" id="nav-notifications">通知</a>
         <a href="#/announcements">公告</a>
-        <!-- 这两条只有管理员看得到，由 app.js 的 paintAdminNav() 按角色切。 -->
+        <!-- 这三条只有管理员看得到，由 app.js 的 paintAdminNav() 按角色切。 -->
         <a href="#/categories" id="nav-categories">分类</a>
         <a href="#/dormitory-areas" id="nav-dormitory-areas">宿舍区</a>
+        <a href="#/users" id="nav-users">用户</a>
       </nav>
       <div class="auth-slot" id="auth-slot"></div>
       <button type="button" class="button" id="theme-toggle">深色</button>
@@ -47,8 +50,10 @@
   <footer class="site-footer">
     <div class="wrap">NCUT Market ·
       <a href="/scalar" target="_blank" rel="noopener">接口文档</a>
-      <!-- 访问计数器。数字由 app.js 填，读的是 localStorage——纯装饰，不接任何真实统计。 -->
-      <span class="visit-counter" id="visit-counter"></span></div>
+      <!-- 在线人数，由 app.js 拉一次填进来。没登录的游客算不进去——服务端没有会话，
+           认不出两次匿名请求是不是同一个人，所以那行说明文字不是装饰。 -->
+      <span class="online-count" id="online-count"></span>
+      <span class="online-note">近 5 分钟有活动的登录用户</span></div>
   </footer>
 
   <script src="vendor/jquery-3.7.1.min.js"></script>
@@ -57,9 +62,11 @@
   <script src="js/api.js"></script>
   <script src="js/products.js"></script>
   <script src="js/messages.js"></script>
+  <script src="js/notifications.js"></script>
   <script src="js/announcements.js"></script>
-  <!-- 要排在 app.js 前面：app.js 建路由表时就要用到 dictionaries。 -->
+  <!-- 这两份要排在 app.js 前面：app.js 建路由表时就要用到 dictionaries 和 users。 -->
   <script src="js/dictionaries.js"></script>
+  <script src="js/users.js"></script>
   <script src="js/app.js"></script>
 </body>
 

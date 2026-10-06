@@ -29,6 +29,15 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasColumnType("tinyint unsigned")
             .HasDefaultValue(UserRole.User)
             .HasSentinel((UserRole)0);
+        // Both nullable with no default: a user with no reset in flight has nothing in either column,
+        // and the sentinel machinery above exists only for the non-nullable enums.
+        builder.Property(x => x.PasswordResetCode).HasMaxLength(64);
+        builder.Property(x => x.PasswordResetExpiresAt).HasColumnType("datetime(3)");
+        // Nullable and unindexed. Null because "never seen" has to be distinguishable from any real
+        // instant, and the online count compares against a cutoff that a default would satisfy.
+        // Unindexed because the users table is small and this column is rewritten on every
+        // authenticated request, so an index on it would cost more to maintain than it saves.
+        builder.Property(x => x.LastSeenAt).HasColumnType("datetime(3)");
         builder.Property(x => x.CreatedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.UpdatedAt).HasColumnType("datetime(3)");
 

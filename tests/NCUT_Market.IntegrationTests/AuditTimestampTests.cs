@@ -171,7 +171,6 @@ public sealed class AuditTimestampTests(DatabaseFixture fixture)
             var image = new ProductImage
             {
                 ProductId = product.Id,
-                OriginalKey = "original.jpg",
                 LargeKey = "large.jpg",
                 MediumKey = "medium.jpg",
                 ThumbnailKey = "thumb.jpg",

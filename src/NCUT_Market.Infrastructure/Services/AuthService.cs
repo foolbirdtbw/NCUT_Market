@@ -20,6 +20,11 @@ internal sealed class AuthService(
     IPasswordHasher<User> passwordHasher,
     IOptions<JwtOptions> jwtOptions) : IAuthService
 {
+    /// <summary>
+    /// What every way of failing a reset says, verbatim. Nothing about the account leaks through it.
+    /// </summary>
+    private const string BadResetCodeMessage = "重置码不对，或者已经过期了。";
+
     public async Task<OperationResult<AuthResponse>> RegisterAsync(
         RegisterRequest request,
         CancellationToken cancellationToken = default)
@@ -104,6 +109,48 @@ internal sealed class AuthService(
         return OperationResult<AuthResponse>.Success(IssueToken(user));
     }
 
+    public async Task<OperationResult<AuthResponse>> CompleteResetAsync(
+        CompleteResetRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var username = request.Username.Trim();
+
+        var user = await dbContext.Users
+            .FirstOrDefaultAsync(x => x.Username == username, cancellationToken);
+
+        var code = ResetCode.Normalize(request.ResetCode);
+
+        if (user is null || !HasUsableResetCode(user, code))
+        {
+            // One answer for four different problems: no such user, nothing outstanding, the wrong code,
+            // and a code past its deadline. Same reasoning as the login path above, one step further —
+            // telling them apart would say not only which usernames exist but which of them are
+            // mid-recovery, and the second is worse than the first.
+            return OperationResult<AuthResponse>.Failure(ErrorCodes.InvalidCredentials, BadResetCodeMessage);
+        }
+
+        // After the code, not before, for the same reason LoginAsync checks status after the password:
+        // answering "this account is disabled" to someone who has not proved they hold the code would
+        // confirm the account exists.
+        if (user.Status != UserStatus.Active)
+        {
+            return OperationResult<AuthResponse>.Failure(
+                ErrorCodes.Forbidden,
+                "这个账号已经被停用了。");
+        }
+
+        user.PasswordHash = passwordHasher.HashPassword(user, request.NewPassword);
+
+        // Burned on use, and cleared as a pair: a row holding a digest with no deadline is one that
+        // never expires, which is the invariant ResetCode.Matches is written to assume.
+        user.PasswordResetCode = null;
+        user.PasswordResetExpiresAt = null;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return OperationResult<AuthResponse>.Success(IssueToken(user));
+    }
+
     public async Task<OperationResult<CurrentUserResponse>> GetByIdAsync(
         long userId,
         CancellationToken cancellationToken = default)
@@ -120,6 +167,20 @@ internal sealed class AuthService(
                 "找不到这个用户。")
             : OperationResult<CurrentUserResponse>.Success(user);
     }
+
+    /// <summary>
+    /// Whether a row carries a reset code that is the one being presented and has not lapsed.
+    /// </summary>
+    /// <remarks>
+    /// The deadline is read from <see cref="AppDbContext.AuditNow"/> rather than
+    /// <see cref="DateTime.UtcNow"/> because that is the clock <c>IUserService.IssueResetCodeAsync</c>
+    /// wrote it with. Comparing across the two would put every code eight hours out — in the direction
+    /// that makes them all still valid, since Beijing time runs ahead.
+    /// </remarks>
+    private static bool HasUsableResetCode(User user, string code) =>
+        user.PasswordResetExpiresAt is DateTime expiresAt
+        && expiresAt >= AppDbContext.AuditNow
+        && ResetCode.Matches(code, user.PasswordResetCode);
 
     /// <summary>
     /// Signs a token for a user.

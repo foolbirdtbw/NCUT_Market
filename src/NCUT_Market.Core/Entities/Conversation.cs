@@ -62,6 +62,30 @@ public sealed class Conversation : IHasCreatedAt, IHasUpdatedAt
     /// <summary>How far the seller has read. See <see cref="BuyerLastReadAt"/>.</summary>
     public DateTime SellerLastReadAt { get; set; }
 
+    /// <summary>
+    /// Who proposed a trade in this thread, or null when nobody has.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The proposal lives here rather than on the listing, which is what lets several buyers be mid
+    /// negotiation on the same item at once. Each thread carries its own, and accepting one clears
+    /// the rest — so a listing has at most one <em>accepted</em> trade (the columns on
+    /// <see cref="Product"/>) but any number of unaccepted proposals.
+    /// </para>
+    /// <para>
+    /// Nulled out when a proposal is accepted by the other side, expires after a day, or is
+    /// superseded by another buyer winning. So "this thread has something pending" is a plain
+    /// <c>TransactionProposedAt != null</c>.
+    /// </para>
+    /// </remarks>
+    public long? TransactionProposedById { get; set; }
+
+    /// <summary>
+    /// When the proposal was made. The first of the flow's two clocks: <c>ProposedAt + 1 day</c> is
+    /// when the sweep drops a proposal nobody answered.
+    /// </summary>
+    public DateTime? TransactionProposedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

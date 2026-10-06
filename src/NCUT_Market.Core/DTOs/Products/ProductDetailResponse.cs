@@ -22,6 +22,14 @@ namespace NCUT_Market.Core.DTOs.Products;
 /// <param name="CreatedAt">Beijing time, no timezone suffix.</param>
 /// <param name="PublishedAt">When it first went live. Null while it has never been published.</param>
 /// <param name="SoldAt">When it was marked sold. Null otherwise.</param>
+/// <param name="InterestedTotal">How many distinct users have ever opened a thread about this listing.</param>
+/// <param name="InterestedRecentCount">How many of those threads have been active in the last week.</param>
+/// <remarks>
+/// There is deliberately no field naming the trade's counterparty. The detail projection is public —
+/// anyone can read a published listing — so a buyer id here would tell every stranger who is winning
+/// the negotiation. The frontend learns it from the thread instead, where membership already decides
+/// who may see what.
+/// </remarks>
 public sealed record ProductDetailResponse(
     long Id,
     long SellerId,
@@ -38,4 +46,6 @@ public sealed record ProductDetailResponse(
     IReadOnlyList<ProductImageResponse> Images,
     DateTime CreatedAt,
     DateTime? PublishedAt,
-    DateTime? SoldAt);
+    DateTime? SoldAt,
+    int InterestedTotal,
+    int InterestedRecentCount);

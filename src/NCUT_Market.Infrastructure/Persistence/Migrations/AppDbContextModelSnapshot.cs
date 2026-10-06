@@ -173,11 +173,24 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime(3)")
                         .HasColumnName("seller_last_read_at");
 
+                    b.Property<DateTime?>("TransactionProposedAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("transaction_proposed_at");
+
+                    b.Property<long?>("TransactionProposedById")
+                        .HasColumnType("bigint")
+                        .HasColumnName("transaction_proposed_by_id");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(3)")
                         .HasColumnName("updated_at");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TransactionProposedAt")
+                        .HasDatabaseName("idx_conversations_transaction_proposed_at");
+
+                    b.HasIndex("TransactionProposedById");
 
                     b.HasIndex("BuyerId", "LastMessageAt")
                         .HasDatabaseName("idx_conversations_buyer_id_last_message_at");
@@ -343,6 +356,10 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTime?>("BuyerConfirmedAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("buyer_confirmed_at");
+
                     b.Property<long>("CategoryId")
                         .HasColumnType("bigint")
                         .HasColumnName("category_id");
@@ -378,6 +395,10 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime(3)")
                         .HasColumnName("published_at");
 
+                    b.Property<DateTime?>("SellerConfirmedAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("seller_confirmed_at");
+
                     b.Property<long>("SellerId")
                         .HasColumnType("bigint")
                         .HasColumnName("seller_id");
@@ -398,9 +419,24 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(100)")
                         .HasColumnName("title");
 
+                    b.Property<DateTime?>("TransactionAcceptedAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("transaction_accepted_at");
+
+                    b.Property<long?>("TransactionBuyerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("transaction_buyer_id");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(3)")
                         .HasColumnName("updated_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int unsigned")
+                        .HasDefaultValue(0u)
+                        .HasColumnName("version");
 
                     b.HasKey("Id");
 
@@ -413,11 +449,17 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                     b.HasIndex("SellerId")
                         .HasDatabaseName("idx_products_seller_id");
 
+                    b.HasIndex("TransactionBuyerId")
+                        .HasDatabaseName("idx_products_transaction_buyer_id");
+
                     b.HasIndex("Status", "CreatedAt")
                         .HasDatabaseName("idx_products_status_created_at");
 
                     b.HasIndex("Status", "LastActivityAt")
                         .HasDatabaseName("idx_products_status_last_activity_at");
+
+                    b.HasIndex("Status", "TransactionAcceptedAt")
+                        .HasDatabaseName("idx_products_status_transaction_accepted_at");
 
                     b.ToTable("products", null, t =>
                         {
@@ -463,12 +505,6 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
                         .HasColumnName("mime_type");
-
-                    b.Property<string>("OriginalKey")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("original_key");
 
                     b.Property<long>("ProductId")
                         .HasColumnType("bigint")
@@ -523,6 +559,10 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime(3)")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("last_seen_at");
+
                     b.Property<string>("Nickname")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -534,6 +574,15 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
                         .HasColumnName("password_hash");
+
+                    b.Property<string>("PasswordResetCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("password_reset_code");
+
+                    b.Property<DateTime?>("PasswordResetExpiresAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("password_reset_expires_at");
 
                     b.Property<byte>("Role")
                         .ValueGeneratedOnAdd()
@@ -594,6 +643,11 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SellerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("NCUT_Market.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("TransactionProposedById")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Buyer");
 
@@ -658,6 +712,11 @@ namespace NCUT_Market.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SellerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("NCUT_Market.Core.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("TransactionBuyerId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 

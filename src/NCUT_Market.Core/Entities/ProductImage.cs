@@ -1,16 +1,19 @@
 namespace NCUT_Market.Core.Entities;
 
 /// <summary>
-/// One uploaded photo. The storage layer writes four derived sizes, so each row carries four object
-/// keys rather than a single URL.
+/// One uploaded photo. The storage layer writes three derived sizes, so each row carries three
+/// object keys rather than a single URL.
 /// </summary>
+/// <remarks>
+/// There is no key for the file the seller uploaded. The largest render is 1280 and that is the
+/// largest any page asks for, so keeping the source would spend the great majority of this site's
+/// disk on copies nothing ever requests.
+/// </remarks>
 public sealed class ProductImage : IHasCreatedAt
 {
     public long Id { get; set; }
 
     public long ProductId { get; set; }
-
-    public required string OriginalKey { get; set; }
 
     public required string LargeKey { get; set; }
 
@@ -18,13 +21,13 @@ public sealed class ProductImage : IHasCreatedAt
 
     public required string ThumbnailKey { get; set; }
 
-    /// <summary>Width of the original, in pixels. Column is INT UNSIGNED.</summary>
+    /// <summary>Width of the upload, in pixels. Column is INT UNSIGNED.</summary>
     public int Width { get; set; }
 
-    /// <summary>Height of the original, in pixels. Column is INT UNSIGNED.</summary>
+    /// <summary>Height of the upload, in pixels. Column is INT UNSIGNED.</summary>
     public int Height { get; set; }
 
-    /// <summary>Size of the original in bytes. Column is BIGINT UNSIGNED.</summary>
+    /// <summary>Size of the upload in bytes. Column is BIGINT UNSIGNED.</summary>
     public long FileSize { get; set; }
 
     public required string MimeType { get; set; }
