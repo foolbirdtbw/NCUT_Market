@@ -15,11 +15,15 @@ namespace NCUT_Market.Core.DTOs.Products;
 /// <param name="SortOrder">Display order within the listing.</param>
 /// <remarks>
 /// <para>
-/// Four sizes exist in storage (original/large/medium/thumbnail) and three are exposed. The original
-/// stays behind on purpose: it is the only copy of the bytes the seller uploaded, every render below
-/// it is lossy, and a photo that has been through a resize cannot be turned back into a better one.
-/// What it must not do is reach a page — it can be several megabytes, and no page here displays an
-/// image big enough to need it.
+/// Three sizes exist in storage and all three are exposed. There is no full-resolution copy of the
+/// upload — <c>ImageStorage</c> writes only the large/medium/thumbnail renders and keeps the bytes
+/// the seller sent nowhere, so the largest thing a page can show is <paramref name="Url"/>.
+/// </para>
+/// <para>
+/// The large render is a proportional fit, not a crop: it is the upload scaled so its longest edge is
+/// at most 1280, aspect ratio untouched, and an upload already inside that box is written through
+/// unchanged. That is what makes it safe to hand to a viewer: a page can show the whole photo rather
+/// than the square slice a grid cell would give it.
 /// </para>
 /// <para>
 /// URLs rather than storage keys: the key is an internal layout detail, and a client that has to

@@ -191,8 +191,12 @@ window.products = (function ($) {
           ' sizes="(max-width: 720px) 50vw, 200px"'
         : '';
 
+      /* data-full 和 src 现在是同一个值，但故意不读 src：格子的 src 是给 srcset 当兜底的，
+       * 以后要把格子降成 mediumUrl 省流量时，浮层应该仍然给 1280 那张。读 src 的话
+       * 那次改动会静默地把浮层一起降级。 */
       return '<figure class="gallery-item">' +
-        '<img src="' + NM.esc(image.url) + '"' + source + ' alt="" loading="lazy">' +
+        '<img src="' + NM.esc(image.url) + '"' + source + ' alt="" loading="lazy"' +
+        ' data-action="view-image" data-full="' + NM.esc(image.url) + '">' +
         (isOwner
           ? '<button class="button button-danger gallery-remove" data-action="delete-image" ' +
           'data-image-id="' + image.id + '">删除</button>'
@@ -273,6 +277,9 @@ window.products = (function ($) {
       '<p class="detail-interest">最近一周 ' + product.interestedRecentCount +
       ' 人询问 · 共 ' + product.interestedTotal + ' 人询问</p>' +
       galleryHtml(product, isOwner) +
+      /* 浮层放在页面标记里，而不是启动时挂到 body 上：route() 每次换页都整块重建 #view，
+       * 放里面等于「换页自动关掉浮层」，不用再写一处收尾。 */
+      '<div class="lightbox" id="lightbox" hidden><img alt=""></div>' +
       (isOwner ? ownerActionsHtml(product) : contactHtml(product)) +
       '<p id="detail-error"></p>' +
       '</div>';
@@ -563,6 +570,23 @@ window.products = (function ($) {
     return match ? match[1] : null;
   }
 
+  /* ---------- 看图浮层 ---------- */
+
+  /* 格子是 200px 方形裁切，点开看同比例的整张——浮层里显示的 url 就是 1280 那张
+   * （ImageStorage 按 ResizeMode.Max 写的，比例没动）。原图存储里没有，也不需要有。 */
+  function openImage(url) {
+    $("#lightbox").removeAttr("hidden").find("img").attr("src", url);
+  }
+
+  /* 关掉时清 src，不只是藏起来：留着的话那张 1280 的图会一直被浏览器攥着，
+   * 而它在隐藏状态下没有任何用处。
+   *
+   * 浮层不存在时（没开详情页）$("#lightbox") 是空集，整个函数是空操作，所以调用方
+   * 不用先判断浮层开没开。 */
+  function closeImage() {
+    $("#lightbox").attr("hidden", "hidden").find("img").removeAttr("src");
+  }
+
   /* ---------- 表单（新建与编辑共用） ---------- */
 
   function formFieldsHtml(product) {
@@ -824,6 +848,8 @@ window.products = (function ($) {
     uploadImage: uploadImage,
     deleteImage: deleteImage,
     generateCover: generateCover,
-    discardCover: discardCover
+    discardCover: discardCover,
+    openImage: openImage,
+    closeImage: closeImage
   };
 })(jQuery);

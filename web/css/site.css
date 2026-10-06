@@ -583,7 +583,31 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   object-fit: cover;
 }
 
+/* 提示这张能点。 */
+.gallery-item img[data-action] { cursor: zoom-in; }
+
 .gallery-remove { position: absolute; top: 4px; right: 4px; padding: 0 6px; font-size: 12px; }
+
+/* 点开看整张。fixed 铺满视口，图片按原比例缩到放得下为止。 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.8);
+  cursor: zoom-out;
+}
+
+/* 必须单列一条。上面那个 display: flex 会盖掉浏览器给 [hidden] 的 display: none，
+   不补这条的话 hidden 属性形同虚设，浮层会一直挡着页面。 */
+.lightbox[hidden] { display: none; }
+
+/* 格子上那条 aspect-ratio: 1/1 在 .gallery-item img 里，浮层这张不在 .gallery-item 里面，
+   所以跟不过来。 */
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 .gallery-empty {
   width: 100%;

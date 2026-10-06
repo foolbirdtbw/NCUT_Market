@@ -220,6 +220,16 @@
     .on("click", "[data-action='delete-image']", function () {
       products.deleteImage($(this).attr("data-image-id"));
     })
+    /* 看图浮层。删除按钮是图格的兄弟节点，不是子节点，所以点删除不会顺带弹浮层。 */
+    .on("click", "[data-action='view-image']", function () {
+      products.openImage($(this).attr("data-full"));
+    })
+    .on("click", "#lightbox", function () { products.closeImage(); })
+    .on("keydown", function (event) {
+      if (event.key === "Escape") {
+        products.closeImage();
+      }
+    })
     .on("click", "#generate-cover", function () { products.generateCover(); })
     .on("click", "[data-action='discard-cover']", function () { products.discardCover(); })
     .on("click", "[data-action='contact-seller']", function () {
