@@ -277,12 +277,17 @@ window.products = (function ($) {
       '<p class="detail-interest">最近一周 ' + product.interestedRecentCount +
       ' 人询问 · 共 ' + product.interestedTotal + ' 人询问</p>' +
       galleryHtml(product, isOwner) +
-      /* 浮层放在页面标记里，而不是启动时挂到 body 上：route() 每次换页都整块重建 #view，
-       * 放里面等于「换页自动关掉浮层」，不用再写一处收尾。 */
-      '<div class="lightbox" id="lightbox" hidden><img alt=""></div>' +
       (isOwner ? ownerActionsHtml(product) : contactHtml(product)) +
       '<p id="detail-error"></p>' +
-      '</div>';
+      '</div>' +
+      /* 浮层放在页面标记里，而不是启动时挂到 body 上：route() 每次换页都整块重建 #view，
+       * 放里面等于「换页自动关掉浮层」，不用再写一处收尾。
+       *
+       * 但它必须是 .card 的**兄弟**，不能是子节点。深色皮肤给 .card 加了
+       * backdrop-filter，而一个不是 none 的滤镜会给内部的 fixed/absolute 后代当含块
+       * ——浮层是 position: fixed; inset: 0，一旦被 .card 圈住就不再铺满视口，只会
+       * 盖住卡片那一块。浅色下 .card 没有滤镜，看不出任何区别，所以这条特别容易漏掉。 */
+      '<div class="lightbox" id="lightbox" hidden><img alt=""></div>';
   }
 
   function showDetail(id) {

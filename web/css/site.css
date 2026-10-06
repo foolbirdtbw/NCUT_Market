@@ -1,35 +1,65 @@
 /* NCUT Market 样式。手写，无框架无构建。
  *
- * 皮肤是「网页粗野主义」：纯白底、纯黑字、蓝色带下划线链接、1px 实线框、直角、
- * 零过渡、零阴影、零渐变。看起来应该像用记事本写的、再 FTP 传上去的页面。
+ * 两套皮肤：
  *
- * 深色模式是同一套东西的黑白反相——同一批令牌换值，组件规则一行不重写。
+ *   浅色 = 网页粗野主义。纯白底、纯黑字、蓝色带下划线链接、1px 实线框、直角、
+ *          零过渡、零阴影、零渐变。看起来应该像用记事本写的、再 FTP 传上去的页面。
+ *   深色 = 夜航玻璃拟态。深墨夜景配柔光光斑，无色玻璃面板浮在上面，唯一强调色是
+ *          香槟金。整节在文件末尾。
  *
  * 分区：令牌 → 重置/排版 → 布局 → 外框 → 控件 → 卡片/网格 → 消息/表格
- *       → 公告 → 页脚 → 反相主题 → 响应式
+ *       → 公告 → 页脚 → 响应式 → 深色：夜航玻璃拟态
  *
- * 三条纪律：
- *   1. 组件里不写死颜色，一律走令牌。两套主题因此只换值。
- *   2. 直角、零过渡、零阴影是硬规矩，不是风格偏好。文件里搜不到 border-radius、
- *      box-shadow、transition、linear-gradient——只有下面那条把它们钉死的规则。
- *   3. 按钮和输入框的「系统铬色」（银灰面 + 白/#808080 斜面）两套主题里**不换**。
- *      它们是同一个物件，跟页面底色无关——就像黑色桌面上摆的 Windows 按钮
- *      仍然是银色的。
+ * 纪律分两层。原来是「组件里不写死颜色，一律走令牌，两套主题只换值」——玻璃拟态
+ * 做不到，它和粗野主义差的不只是**值**，还有**结构**：圆角、模糊、三层方向性阴影、
+ * spring 过渡、渐变场景、噪点，没有一样塞得进一个颜色变量里。所以：
+ *
+ *   1. 能用一个值表达的，一律走令牌——圆角、阴影、模糊、过渡、边框、底色都在
+ *      `:root` 里。**浅色那一份的值就是粗野主义原本的字面量**，所以浅色由构造保证
+ *      不被动到：换掉一个 var() 不等于改了它渲染成什么。
+ *   2. 只有深色才要做的取舍，写在末尾那个 [data-theme="dark"] 块里。新组件默认落在
+ *      第 1 层；只有两套皮肤真的长得不一样，才需要进第 2 层。
+ *
+ * 另外两条仍然成立：
+ *   - 按钮和输入框的「系统铬色」（银灰面 + 白/#808080 斜面）浅色里不动。深色把它们
+ *     换成玻璃——那是两套皮肤的结构差异，走的就是上面第 2 层。
+ *   - 深色下的形状和动效不是随手写的：玻璃面板必须有顶边高光 + 底边暗缘 + 外层深度
+ *     三层阴影，缺一层就退回「平面半透明色块」。
  */
 
 :root {
+  /* 表单控件本体和它弹出来的那层列表由浏览器画，跟的是这个值，不跟我们的令牌。
+     不钉的话它跟的是**系统**：系统是浅色时，深色主题的下拉列表就是白底，而 <option>
+     的字色是从 select 继承来的 —— 白字白底，什么都看不见。钉死之后两套皮肤各拿各的一档。
+     顺带把滚动条、数字框的上下箭头、文件框的按钮也一起定了。 */
+  color-scheme: light;
   --bg: #ffffff;
+  /* 光斑那类渐变要靠它才钉在视口上。纯色底这个值无所谓。 */
+  --bg-attachment: scroll;
   --surface: #ffffff;
+  --surface-raised: #ffffff;
   --text: #000000;
   /* 正文弱化色。规范说弱化色也用纯黑、靠结构分层次——但 12px 的元信息
      （成色、时间、页数）全黑会糊成一片，读不出来。这是有意的偏离。 */
   --muted: #444444;
   --border: #000000;
+  /* hover 时提亮的边框。粗野主义没有这一档，两个值一样。 */
+  --border-strong: #000000;
 
   --accent: #0000ff;
+  /* 链接的颜色本来就跟 --accent 是同一个蓝。拆出来是因为深色那边要分开：
+     强调色收窄成香槟金，链接却仍然是白的。 */
+  --link: #0000ff;
+  --link-hover: #ff0000;
+  /* 下划线取当前字色。深色那边会压低这一档，免得整页链接发亮。 */
+  --link-underline: currentColor;
   --link-visited: #551a8b;
   --danger: #ff0000;
   --success: #008000;
+  /* 价格、公告标题、未读点。粗野主义里这三处都用红，深色那边改香槟金。 */
+  --price: #ff0000;
+  --mark: #ff0000;
+  --badge-sold-ink: #ff0000;
 
   /* 系统银灰：按钮的面。必须比白色深，否则白面 + 白色上左边框＝斜面完全看不见，
      那就不成其为 Windows 95 按钮了。规范自己的配色表也是这么写的。 */
@@ -41,64 +71,153 @@
      自己算明暗，引擎之间不一致；自绘两色是确定的，而且 :active 只要对调就是「按下去」。 */
   --bevel-hi: #ffffff;
   --bevel-lo: #808080;
+  /* 控件边框的粗细。Window 95 的斜面要两像素才看得出明暗，玻璃那边一像素就够。 */
+  --ctl-border-w: 2px;
+  /* 控件的内边距。玻璃按钮要比 Windows 95 那个瘦长条矮胖一点才站得住。 */
+  --ctl-pad: 3px 14px;
+  /* 禁用态的按钮和「上一页/下一页」那种点不动的锚点。和 --bevel-lo 同色，
+     但深色那边不能跟着走——.20 的白当字色等于看不见。 */
+  --disabled-ink: #808080;
 
-  /* 输入框聚焦时的底色。模拟 90 年代浏览器选中文本的黄。 */
+  /* 输入框聚焦。模拟 90 年代浏览器选中文本的黄底黑字，外面不加圈。 */
   --focus-bg: #ffffcc;
+  --focus-ink: #000000;
+  --focus-ring: none;
+
+  /* 形状与动效。粗野主义把这三样钉死成零，深色那一份才是这一轮要换的东西。 */
+  --radius: 0;
+  --radius-ctl: 0;
+  --radius-pill: 0;
+  --shadow-panel: none;
+  --shadow-ctl: none;
+  --glass: none;
+  --transition: none;
+
+  /* 正文用宋体。
+   *
+   * 规范给的是等宽或 system-ui——那是写给拉丁文的。这个站九成是中文，等宽中文没有
+   * 好看的系统字体，宋体才是这套东西里真正的「系统正文」。而宋体本身就是衬线，
+   * 顺带把「标题用 Times/Georgia 衬线」这条也满足了：Georgia 管拉丁字，宋体管汉字。
+   *
+   * 当年确实是 12px，但 SimSun 是点阵取向的字体，细笔画在高分屏上低于 13px 就糊成
+   * 一团——那是「看起来坏了」，不是「复古」。抬到 14px，靠颜色、边框和直角去还原
+   * 年代感，而不是靠把字缩小。
+   *
+   * 深色那边换成系统无衬线：玻璃面板上没有做旧这回事，而且暗底小字细笔画更吃亏。 */
+  --font-body: "SimSun", "宋体", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --font-head: Georgia, "Times New Roman", "SimSun", "宋体", serif;
+  --font-mono: ui-monospace, Consolas, "Courier New", monospace;
 }
 
-/* 黑白反相。只换令牌，不碰任何组件规则。
-   蓝色在纯黑上只有 1.9:1，读不了，所以链接提亮；红和绿同理。 */
+/* 深色：夜航玻璃拟态。这里只有令牌——组件那边还差得远，得靠文件末尾那一节。 */
 :root[data-theme="dark"] {
-  --bg: #000000;
-  --surface: #000000;
+  color-scheme: dark;
+  /* 场景：深墨夜景 + 三个大半径柔光光斑。玻璃要折射的就是这一层：没有它，
+     半透明面板后面是一块平色，玻璃感从根上就没了。 */
+  --bg:
+    radial-gradient(640px circle at 85% 10%, rgba(124, 156, 196, .28), transparent 65%),
+    radial-gradient(560px circle at 10% 90%, rgba(51, 81, 122, .35), transparent 65%),
+    radial-gradient(520px circle at 50% 46%, rgba(228, 184, 99, .10), transparent 60%),
+    #0b1322;
+  /* fixed：光斑钉在视口上，不被文档高度抻开。 */
+  --bg-attachment: fixed;
+
+  /* 玻璃永远无色，只是白的不同透明度。给它上色就成实心色块了。 */
+  --surface: rgba(255, 255, 255, .06);
+  --surface-raised: rgba(255, 255, 255, .10);
+  --border: rgba(255, 255, 255, .15);
+  --border-strong: rgba(255, 255, 255, .30);
+
   --text: #ffffff;
-  --muted: #b8b8b8;
-  --border: #ffffff;
+  /* .60 压在 #0b1322 上是 ~7:1，过 AA。浅色那份 #444444 是同一个角色。 */
+  --muted: rgba(255, 255, 255, .60);
 
-  --accent: #66ccff;
-  --link-visited: #b18cff;
-  --danger: #ff5555;
-  --success: #33cc33;
+  /* 唯一强调色：香槟金。只给主 CTA、关键数字和进行中的状态。 */
+  --accent: #e4b863;
+  --accent-ink: #f3dca8;
+  --link: rgba(255, 255, 255, .88);
+  /* hover 不再是红色——深色下红色只留给错误和删除。 */
+  --link-hover: #ffffff;
+  --link-underline: rgba(255, 255, 255, .32);
+  --link-visited: rgba(255, 255, 255, .72);
+  /* 低饱和暖红。只用于错误块和删除按钮，不用来表达普通状态。 */
+  --danger: #e8806e;
+  /* 在售。绿没了——状态本来就该靠文案读，不该只靠颜色。 */
+  --success: rgba(255, 255, 255, .85);
+  --price: #e4b863;
+  --mark: #e4b863;
+  /* 已售出。.52 是 12px 粗体在 #0b1322 上还能过 AA 的下限（~5.2:1）；
+     规格给的 .40 只有 ~3.4:1，那个尺寸不算大号文字，不达标。 */
+  --badge-sold-ink: rgba(255, 255, 255, .52);
 
-  --focus-bg: #ffffcc;
+  /* 玻璃面板的三层受光：顶边高光、底边暗缘、外层深度。缺一层就退回「平面半透明」。 */
+  --radius: 24px;
+  --radius-ctl: 16px;
+  --radius-pill: 999px;
+  --shadow-panel:
+    0 16px 40px rgba(3, 7, 18, .50),
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    inset 0 -1px 0 rgba(2, 6, 16, .35);
+  --shadow-ctl:
+    0 4px 16px rgba(3, 7, 18, .45),
+    inset 0 1px 0 rgba(255, 255, 255, .25),
+    inset 0 -1px 0 rgba(2, 6, 16, .30);
+  /* 30px 而不是规格写的 40/60：桌面看上去没差，中端机和移动端少掉帧。 */
+  --glass: blur(30px) saturate(180%);
+  --transition: all 500ms cubic-bezier(.16, 1, .3, 1);
 
-  /* --chrome / --bevel-* 不在这里重写，这是有意的：见文件头的第 3 条纪律。 */
+  /* 控件那套「系统铬色」在这里换成玻璃。四个斜面色给成同一个值，那条四色边框
+     就自然塌成一条均匀的 1px 线——按钮和输入框的规则一行都不用改。按下时的反馈
+     也不再靠斜面反转（反转同色等于没反应），改成末尾那个 :active 缩放。 */
+  --chrome: rgba(255, 255, 255, .10);
+  --chrome-text: #ffffff;
+  --bevel-hi: rgba(255, 255, 255, .20);
+  --bevel-lo: rgba(255, 255, 255, .20);
+  --ctl-border-w: 1px;
+  --ctl-pad: 8px 16px;
+  --disabled-ink: rgba(255, 255, 255, .32);
+
+  --focus-bg: rgba(255, 255, 255, .10);
+  --focus-ink: #ffffff;
+  /* 金环 + 保住顶边高光。规格的 focus 配方就是这两条。 */
+  --focus-ring: 0 0 0 3px rgba(228, 184, 99, .15), inset 0 1px 0 rgba(255, 255, 255, .25);
+
+  --font-body: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --font-head: var(--font-body);
 }
 
 /* ---------- 重置与排版 ---------- */
 
 * { box-sizing: border-box; }
 
-/* 直角、零过渡、零阴影——三条硬规矩钉在一处，不用逐个组件去记。 */
-.button, input, select, textarea, .card, .product-card, .entry-card, .badge,
+/* 形状和动效钉在一处，不用逐个组件去记。浅色那两个令牌都是 0 / none，渲染出来和
+   从前逐像素一样；深色把它们换成圆角和 spring 过渡。
+   这一条给的是**控件**的圆角，面板（.card 等）在自己的规则里用 --radius 盖过去。 */
+.button, input, select, textarea, .card, .product-card, .entry-card,
 .bubble, .nav-badge, .table-scroll, .conv-avatar,
-.gallery-item img, .thread-thumb { border-radius: 0; }
+.gallery-item img, .thread-thumb { border-radius: var(--radius-ctl); }
 
-.button, a, input, select, textarea { transition: none; }
+/* 徽标是药丸，其余是面板角——深色下这两个不是一回事。 */
+.badge { border-radius: var(--radius-pill); }
 
-/* 正文用宋体。
- *
- * 规范给的是等宽或 system-ui——那是写给拉丁文的。这个站九成是中文，等宽中文没有
- * 好看的系统字体，宋体才是这套东西里真正的「系统正文」。而宋体本身就是衬线，
- * 顺带把「标题用 Times/Georgia 衬线」这条也满足了：Georgia 管拉丁字，宋体管汉字。
- *
- * 当年确实是 12px，但 SimSun 是点阵取向的字体，细笔画在高分屏上低于 13px 就糊成
- * 一团——那是「看起来坏了」，不是「复古」。抬到 14px，靠颜色、边框和直角去还原
- * 年代感，而不是靠把字缩小。 */
+.button, a, input, select, textarea { transition: var(--transition); }
+
+/* 字体走令牌，两套皮肤的取值和理由都在 :root 那边。 */
 body {
   margin: 0;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  background-attachment: var(--bg-attachment);
   color: var(--text);
-  font: 14px/1.6 "SimSun", "宋体", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  font: 14px/1.6 var(--font-body);
 }
 
 /* h1 > h2 > h3 > p 就是层级本身，不靠多余的装饰去暗示。 */
 h1, h2, h3 {
   margin: 0 0 8px;
-  font-family: Georgia, "Times New Roman", "SimSun", "宋体", serif;
+  font-family: var(--font-head);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -108,9 +227,13 @@ h3 { font-size: 1.05rem; }
 p { margin: 0 0 8px; }
 p:last-child { margin-bottom: 0; }
 
-/* 蓝色带下划线的链接，是这页上最主要的交互元素。hover 只有颜色变化：蓝 → 红。 */
-a { color: var(--accent); text-decoration: underline; }
-a:hover { color: var(--danger); }
+/* 蓝色带下划线的链接，是这页上最主要的交互元素。hover 只有颜色变化：蓝 → 红。
+ *
+ * 颜色和 hover 色都拆成了令牌，因为深色那套不能用同一个：那边的强调色收窄成香槟金，
+ * 不是给链接用的；红色也收窄成「错误和删除」专用。下划线留着——深色下把链接的
+ * 下划线拿掉就只剩字色深浅一个区别，那既不达 WCAG 1.4.1，也让人看不出哪儿能点。 */
+a { color: var(--link); text-decoration: underline; text-decoration-color: var(--link-underline); }
+a:hover { color: var(--link-hover); }
 
 /* 但下划线只能留在正文里。下面这些是「长得像按钮或卡片」的锚点，
    带上下划线会在十几个地方同时崩掉。 */
@@ -139,7 +262,7 @@ code,
 .detail-price,
 .online-count span,
 .reset-code {
-  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -174,6 +297,9 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
   z-index: 20;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  /* 深色下这里是全站唯一「真有东西从底下经过」的玻璃——内容滚到它下面时才看得见
+     模糊和饱和度增强。所以它值得一个 backdrop-filter，面板们反而未必（见 .card）。 */
+  backdrop-filter: var(--glass);
 }
 
 .header-inner {
@@ -190,7 +316,7 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
 
 .site-nav { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
 .site-nav a { white-space: nowrap; }
-.site-nav a:hover { color: var(--danger); }
+.site-nav a:hover { color: var(--link-hover); }
 
 /* 当前页：黑色加粗、去掉下划线。和一排蓝色的可点链接并列时一眼就能认出来，
    又不需要任何底色或边框。 */
@@ -211,13 +337,15 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
 /* Windows 95 式凸起：白上左 + 灰下右，配银灰面。 */
 .button {
   appearance: none;
-  padding: 3px 14px;
-  border: 2px solid;
+  padding: var(--ctl-pad);
+  border: var(--ctl-border-w) solid;
   border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
   background: var(--chrome);
   color: var(--chrome-text);
   font: inherit;
   cursor: pointer;
+  /* 深色那边这是「顶边受光 + 底边暗缘」——玻璃控件和平面色块的分界线。浅色是 none。 */
+  box-shadow: var(--shadow-ctl);
 }
 
 /* 按钮没有 hover 态。当年的按钮就没有——状态切换只发生在按下的一瞬间，
@@ -229,7 +357,7 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
   border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
 }
 
-.button:disabled { color: var(--bevel-lo); cursor: not-allowed; }
+.button:disabled { color: var(--disabled-ink); cursor: not-allowed; }
 
 /* 只写 display，不写 color。写了的话 a.button 是 (0,1,1)，会盖过下面
    .button-danger 的 (0,1,0)——删除按钮的字会变成黑的。 */
@@ -237,7 +365,7 @@ a.button { display: inline-block; }
 
 /* 分页的「上一页/下一页」是不可点的 <a>，不是 <button>，所以 :disabled 永远匹配不上
    ——a:disabled 不是合法的选择器。这一条不能和上面那条合并。 */
-a.button.is-disabled { color: var(--bevel-lo); pointer-events: none; }
+a.button.is-disabled { color: var(--disabled-ink); pointer-events: none; }
 
 /* 主按钮：外面再套一圈 1px 黑框。这是 Windows 上「默认按钮」的样子——
    不是换个颜色，是多一层框。outline 不是阴影。 */
@@ -261,20 +389,26 @@ input[type="datetime-local"],
 textarea,
 select {
   appearance: none;
-  padding: 3px 6px;
-  border: 2px solid;
+  padding: var(--ctl-pad);
+  border: var(--ctl-border-w) solid;
   border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
   background: var(--surface);
   color: var(--text);
   font: inherit;
   width: 100%;
+  box-shadow: var(--shadow-ctl);
 }
 
 /* 聚焦时整格变黄，字变黑——像当年浏览器里选中了一段文字。
-   字色必须跟着走：反相主题下输入框的字本来是白的，压在黄底上就没了。 */
+   字色必须跟着走：浅色下输入框的字本来是黑的，压在深色面上就没了——
+   两个值都走令牌，深色那边换成白面白字加一圈金环。 */
 input:focus,
 textarea:focus,
-select:focus { background: var(--focus-bg); color: #000000; }
+select:focus {
+  background: var(--focus-bg);
+  color: var(--focus-ink);
+  box-shadow: var(--focus-ring);
+}
 
 input[type="number"] { width: 10rem; }
 input[type="file"] { padding: 2px; }
@@ -299,6 +433,13 @@ textarea { resize: vertical; }
   margin-bottom: 10px;
   border: 1px solid var(--border);
   background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+  /* 深色下这里是全站唯一带模糊的大面板。它底下的场景是一层平缓的渐变，模糊本身
+     看不太出来，真正让玻璃成立的是三层阴影和透明度——所以面板底下的商品卡片、
+     气泡、表格都不再叠一层 backdrop-filter：嵌在已经模糊过的面上再模糊一遍，
+     既看不出来，又白白多几十个合成层。 */
+  backdrop-filter: var(--glass);
 }
 
 .card-head {
@@ -346,7 +487,8 @@ textarea { resize: vertical; }
 
 .badge-ok { border-color: var(--success); color: var(--success); }
 .badge-bad { border-color: var(--danger); color: var(--danger); }
-.badge-sold { border-color: var(--danger); color: var(--danger); }
+/* 已售出是终点，不是警告——深色那边它不该跟着错误色走，所以单独一个令牌。 */
+.badge-sold { border-color: var(--badge-sold-ink); color: var(--badge-sold-ink); }
 /* 交易中用链接色。绿（在售）和红（已售出）之外只剩蓝，而且蓝本来就表示「还没完」，
    正好对上交易中会变回在售这件事。 */
 .badge-trading { border-color: var(--accent); color: var(--accent); }
@@ -363,6 +505,7 @@ textarea { resize: vertical; }
   margin-bottom: 10px;
   border: 1px solid var(--danger);
   background: var(--surface);
+  border-radius: var(--radius-ctl);
 }
 
 .error-card h3 { color: var(--danger); }
@@ -473,6 +616,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   height: 160px;
   margin: 8px 0;
   border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
 }
 
 .form-error {
@@ -480,6 +624,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   margin-bottom: 12px;
   border: 1px solid var(--danger);
   background: var(--surface);
+  border-radius: var(--radius-ctl);
   word-break: break-word;
 }
 
@@ -506,6 +651,13 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   margin-bottom: 12px;
 }
 
+/* 价格框跟着格子走。
+   `input[type="number"]` 上那条 10rem 是给发布表单里单独一个价格框的，放进筛选栏就成了
+   160px 压在 7rem（112px）的格子上，右边溢出 48px。溢出本身两边都有，但只有深色看得见：
+   浅色下后面那个框和银灰按钮都是不透明的，正好把溢出来的部分盖住；深色下控件是半透明的
+   玻璃，溢出的圆角和边框直接透在搜索按钮上。 */
+.filter-bar input[type="number"] { width: 100%; }
+
 /* ---------- 商品网格 ---------- */
 
 /* 这是 <a> 的 CSS Grid，不是 <table>，没有 markup 能把它变成表格。
@@ -522,6 +674,11 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+  /* 缩略图是紧贴卡片上沿的一整块方图。卡片圆了以后不裁的话，图的两个直角会从
+     圆角外面支出来。 */
+  overflow: hidden;
 }
 
 /* hover 只改边框色。整块变底色在白底页面上会糊成一团色块。 */
@@ -552,12 +709,12 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   -webkit-line-clamp: 2;
 }
 
-.product-price { color: var(--danger); font-size: 1.05rem; font-weight: 700; }
+.product-price { color: var(--price); font-size: 1.05rem; font-weight: 700; }
 .product-meta { color: var(--muted); font-size: 12px; }
 
 /* ---------- 详情 ---------- */
 
-.detail-price { margin-bottom: 8px; color: var(--danger); font-size: 1.5rem; font-weight: 700; }
+.detail-price { margin-bottom: 8px; color: var(--price); font-size: 1.5rem; font-weight: 700; }
 
 .detail-meta {
   display: flex;
@@ -613,6 +770,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   width: 100%;
   padding: 20px 0;
   border: 1px dashed var(--border);
+  border-radius: var(--radius-ctl);
   color: var(--muted);
   text-align: center;
   font-size: 12px;
@@ -624,6 +782,8 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .announcement-bar {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  /* 和顶栏同理：这条上面没有东西盖着，是实打实压着页面内容的，模糊看得见。 */
+  backdrop-filter: var(--glass);
 }
 
 /* 拉不到公告、或者被关掉之后这里会被清空。空着就不该占一条高度。 */
@@ -646,7 +806,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   color: var(--text);
 }
 
-.announcement-text strong { margin-right: 6px; color: var(--danger); }
+.announcement-text strong { margin-right: 6px; color: var(--mark); }
 .announcement-more { white-space: nowrap; }
 .announcement-close { padding: 0 6px; font-size: 12px; line-height: 1.6; }
 
@@ -703,7 +863,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   width: 7px;
   height: 7px;
   margin-left: 6px;
-  background: var(--danger);
+  background: var(--mark);
   vertical-align: middle;
 }
 
@@ -781,7 +941,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .notice-meta { color: var(--muted); font-size: 12px; }
 
 /* 未读用左侧竖条，和会话列表的方块呼应但不重复——两种列表挨着看不会混。 */
-.notice-item.is-unread { border-left: 3px solid var(--danger); padding-left: 7px; }
+.notice-item.is-unread { border-left: 3px solid var(--mark); padding-left: 7px; }
 
 /* ---------- 公告页 ---------- */
 
@@ -798,7 +958,8 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 /* ---------- 用户管理页 ---------- */
 
 /* 重置码那块要跳出页面——管理员整页就为了抄这一串，错过它就得重发一个。
-   所以这里只加粗边框，仍是 1px 实线和零阴影，不越纪律。 */
+   浅色下只加粗边框，仍是实线，不越「零阴影」那条纪律；深色下换成一圈金边，
+   见文件末尾。 */
 .reset-card { border-width: 3px; }
 
 .reset-code {
@@ -806,6 +967,8 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   padding: 14px 10px;
   border: 1px solid var(--border);
   background: var(--surface);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-ctl);
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: 4px;
@@ -825,6 +988,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   padding: 0 4px;
   background: var(--surface);
   color: var(--text);
+  border-radius: var(--radius-pill);
   vertical-align: middle;
   font-weight: 700;
   letter-spacing: 2px;
@@ -866,4 +1030,125 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
   .bubble { max-width: 88%; }
   .thread-form { flex-direction: column; }
+}
+
+/* ---------- 深色：夜航玻璃拟态 ---------- */
+
+/* 令牌（夜景、玻璃、香槟金、圆角、三层阴影、模糊、spring 过渡）都在文件开头那一节，
+   这里只放**规则**上的取舍——两套皮肤长得不一样、光换一个值表达不出来的那部分。
+
+   每条都带 :root[data-theme="dark"] 前缀，特异性比上面高一级，所以永远赢，不需要
+   !important。反过来说：凡是这里重写了 outline 的地方，都得自己把焦点态补回来，
+   否则会连全局那条 :focus-visible 一起盖掉。 */
+
+/* 颗粒噪点。2.5% 的 feTurbulence 铺满视口，把塑料感磨掉——玻璃的「像真的」有一半
+   靠它。
+   - position: fixed 是为了让它脱离 body 的 flex 流。body 是 flex 容器，一个静态定位
+     的伪元素会变成一个撑高的 flex item，页面底下凭空多出一条空白。
+   - pointer-events: none，不然它盖在整页上面，会吃掉全站的点击。
+   - 只有深色给 content，浅色连伪元素都不生成。 */
+:root[data-theme="dark"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: .025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 焦点环换成香槟金。点线在玻璃上看着像渲染坏了。 */
+:root[data-theme="dark"] :focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+/* 下拉列表里的选项。控件本体走令牌，列表这一层不听令牌的：底色由 color-scheme 定，
+   字色是从 select 继承下来的。而 select 的面是 6% 的白玻璃——半透明落在列表底上就是白
+   的，配继承来的白字＝白字白底，所以这里盖一个**不透明**的夜色面。
+   列表是浏览器自己画的，圆角给不了，只能管颜色；要连圆角一起改得开
+   `appearance: base-select` 把列表换成 ::picker(select)，但那个值会给下拉框加一个箭头
+   图标，筛选栏那几格本来就将将放得下，一加就换行了，所以没开。 */
+:root[data-theme="dark"] select option {
+  background-color: #101c30;
+  color: #ffffff;
+}
+
+/* hover 上浮。没有放进令牌层给浅色共用，因为 translateY(0) 同样会建一个层叠上下文
+   ——浅色压根不需要上浮，没必要为它付这个代价。 */
+:root[data-theme="dark"] .product-card:hover,
+:root[data-theme="dark"] .entry-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+  box-shadow:
+    0 24px 64px rgba(3, 7, 18, .60),
+    inset 0 1px 0 rgba(255, 255, 255, .32),
+    inset 0 -1px 0 rgba(2, 6, 16, .35);
+}
+
+/* 按钮 hover。**必须排在主按钮那几条前面**：`.button:hover:not(:disabled)` 和
+   `.button-primary:hover:not(:disabled)` 特异性一模一样（都是五个类），谁在后面谁赢
+   ——反过来的话主按钮一 hover 就掉回白色玻璃面，香槟金只在静止时看得到。 */
+:root[data-theme="dark"] .button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, .35);
+  background: rgba(255, 255, 255, .15);
+  color: var(--chrome-text);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 32px rgba(3, 7, 18, .55), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+
+/* 主按钮：全站唯一让香槟金大面积出现的地方。 */
+:root[data-theme="dark"] .button-primary {
+  /* 浅色那圈 Windows「默认按钮」黑框在这里没有意义。 */
+  outline: none;
+  background: rgba(228, 184, 99, .15);
+  border-color: rgba(228, 184, 99, .40);
+  color: #f3dca8;
+  box-shadow: 0 4px 20px rgba(228, 184, 99, .15), inset 0 1px 0 rgba(243, 220, 168, .35);
+}
+
+/* 上面那条通用 hover 会把它按下去，所以这里连 transform 和阴影一起重新给一遍——
+   只重写颜色的话，主按钮 hover 时留下的还是白色玻璃那圈投影。 */
+:root[data-theme="dark"] .button-primary:hover:not(:disabled) {
+  background: rgba(228, 184, 99, .22);
+  border-color: rgba(228, 184, 99, .55);
+  color: #f3dca8;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 36px rgba(228, 184, 99, .22), inset 0 1px 0 rgba(243, 220, 168, .45);
+}
+
+/* 必须显式补回来：上面那条 .button-primary 的 outline: none 特异性比浅色那条
+   .button-primary:focus-visible 高，不写这一条主按钮聚焦时就没有任何提示。 */
+:root[data-theme="dark"] .button-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 按下的反馈。浅色那边是斜面两色对调，深色四个斜面色同值，对调等于没反应，所以改用
+   玻璃那种轻微的收缩。
+
+   它排在所有 :hover 后面，是因为按下时 :hover 也成立——两条特异性又一样（都是五个
+   类）。放前面的话，主按钮按下去只会重复一遍 hover 的位移，动的那一下反而没了。 */
+:root[data-theme="dark"] .button:active:not(:disabled) { transform: scale(.97); }
+
+/* 列表行 hover 用一层薄白浮起来，而不是变底色块——下面本来就是玻璃。 */
+:root[data-theme="dark"] .conv-item:hover,
+:root[data-theme="dark"] .notice-item:hover,
+:root[data-theme="dark"] .announcement-item:hover { background: rgba(255, 255, 255, .06); }
+
+/* 弹窗：纯黑不透明会把整片夜景掐掉。压暗的墨蓝 + 一点模糊，图片仍然是主角。 */
+:root[data-theme="dark"] .lightbox {
+  background: rgba(3, 7, 18, .72);
+  backdrop-filter: blur(8px);
+}
+
+/* 管理员那个重置码面板：一圈金边，因为整页就是为它存在的。 */
+:root[data-theme="dark"] .reset-card { border-color: rgba(228, 184, 99, .40); }
+
+/* 用标题生成的那张封面是位图，不跟主题走（见 web/README.md）。深色下给它一圈亮边，
+   免得它糊进背景里。 */
+:root[data-theme="dark"] .cover-preview { border-color: var(--border-strong); }
+
+/* 减少动态效果。所有过渡都走 --transition 这一个令牌，所以大部分情况下改它就够了；
+   位移得单独关，因为它写在上面那几条 :hover 里，不是令牌。 */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="dark"] { --transition: none; }
+
+  :root[data-theme="dark"] .product-card:hover,
+  :root[data-theme="dark"] .entry-card:hover,
+  :root[data-theme="dark"] .button:hover:not(:disabled) { transform: none; }
 }
