@@ -145,6 +145,7 @@ value.replace("T", " ").slice(0, 16)
 | 分类/宿舍区字典被软删的商品挡住 | `CategoryService` / `DormitoryAreaService` 删字典项前那句 `AnyAsync(Products)` 没有排除 `deleted_at`，所以一个已经被卖家删掉的商品仍然会挡住它所属的分类。要求是先删干净字典项再删商品，实际不会撞上；真撞上了再排 |
 | 生成封面不改「上架必须有图」 | `ProductService.PublishAsync` 那道检查保留：至少一张图这条规则本身是对的，这一轮是给它配了条出路，不是把它拆掉。客户端也仍然不预检有没有图，撞到 400 才提示 |
 | `/README.md` 可公开访问 | 内容无敏感信息 |
+| 页脚的仓库链接写死在 `<footer>` 里 | Gitee 是 `origin`（`tian_puwen/ncut_-market`），GitHub 是 `github` 远程（`foolbirdtbw/NCUT_Market`），两边推同一份 master。换远程要连 `index.html` 一起改。仓库里没有 `.env`——`.gitignore` 挡着，跟踪的只有 `.env.example` 那份 `Password=replace-me` 占位值，所以推公开仓库不漏数据库密码 |
 | 前后端同源部署 | 前端绑在 API 进程上，所以没有 CORS 配置 |
 
 `out/` 整体是构建产物，只有 `check-frontend.js` 被 `.gitignore` 反向包含进来。**用 PowerShell 跑**：
