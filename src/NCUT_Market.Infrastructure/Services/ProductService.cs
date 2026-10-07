@@ -62,9 +62,14 @@ internal sealed class ProductService(
         // progress stays in the feed on purpose: the other people already talking about it must not
         // watch it vanish, and a badge says what it is. Deliberately only these two — Sold stays out,
         // as it always has.
+        //
+        // DeletedAt is redundant against that pair today — only a Sold listing is ever marked removed
+        // — but it is the rule the feed actually follows, and stating it here keeps the feed correct
+        // if the set of removable statuses ever widens.
         var products = dbContext.Products
             .AsNoTracking()
-            .Where(x => x.Status == ProductStatus.Published || x.Status == ProductStatus.InTransaction);
+            .Where(x => x.DeletedAt == null
+                && (x.Status == ProductStatus.Published || x.Status == ProductStatus.InTransaction));
 
         if (!string.IsNullOrWhiteSpace(query.Q))
         {
@@ -127,9 +132,12 @@ internal sealed class ProductService(
     {
         // No status filter: this is the seller's own working set, so drafts, offlined and sold
         // listings all belong here. It is the only list that shows anything but Published.
+        //
+        // DeletedAt is the one exception, and it is the whole point of removing a listing: this page
+        // is where the seller goes to get rid of things, so a removed one must not come back.
         var products = dbContext.Products
             .AsNoTracking()
-            .Where(x => x.SellerId == sellerId);
+            .Where(x => x.SellerId == sellerId && x.DeletedAt == null);
 
         var totalCount = await products.CountAsync(cancellationToken);
 
@@ -151,7 +159,7 @@ internal sealed class ProductService(
     {
         var product = await dbContext.Products
             .AsNoTracking()
-            .Where(x => x.Id == id)
+            .Where(x => x.Id == id && x.DeletedAt == null)
             .Select(DetailProjection(AppDbContext.AuditNow.AddDays(-InterestedWindowDays)))
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -388,8 +396,9 @@ internal sealed class ProductService(
         }
 
         // A published listing has to be taken down first, so deleting is never one click away from
-        // a live page. A sold one is kept: it is the record that the transaction happened.
-        if (product.Status is not (ProductStatus.Draft or ProductStatus.Offline))
+        // a live page. Sold is allowed through: the seller gets to clear a finished listing out of
+        // 我的商品, and what that costs is decided below.
+        if (product.Status is not (ProductStatus.Draft or ProductStatus.Offline or ProductStatus.Sold))
         {
             return OperationResult<bool>.Failure(
                 ErrorCodes.InvalidState,
@@ -406,6 +415,22 @@ internal sealed class ProductService(
                 "有人正在跟你谈这个商品的交易，先去私信里处理它。");
         }
 
+        // A sale that went through the platform leaves a record, and that record is not a copy of
+        // anything — it is these transaction columns. Hard-deleting would blank the trade projection
+        // in ConversationService and take the panel, along with the confirm-receipt/confirm-payment
+        // history, out of both parties' threads. So the row stays and only stops being visible:
+        // GetByIdAsync, ListMineAsync and RequireOwnedAsync all filter on DeletedAt. The photos stay
+        // too — the thread they hang off still shows one.
+        if (product.TransactionBuyerId is not null)
+        {
+            product.DeletedAt = AppDbContext.AuditNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return OperationResult<bool>.Success(true);
+        }
+
+        // Sold to nobody in particular, or taken down before it ever sold. No thread holds a record
+        // of this listing, so the row and its files go.
         var keys = await dbContext.ProductImages
             .Where(x => x.ProductId == id)
             .Select(x => new StoredImage(x.LargeKey, x.MediumKey, x.ThumbnailKey, 0, 0, 0, string.Empty))
@@ -602,7 +627,12 @@ internal sealed class ProductService(
             // LastMessageAt rather than a scan of messages: the column is written when the thread is
             // created and on every message, so it already answers "has anyone said anything here
             // lately" without touching the messages table.
-            product.Conversations.Count(conversation => conversation.LastMessageAt >= interestedSince));
+            product.Conversations.Count(conversation => conversation.LastMessageAt >= interestedSince),
+
+            // The same test DeleteAsync branches on, so the confirm dialog cannot promise one thing
+            // and the server do another. TransactionBuyerId is the right column, not Status: Sold is
+            // also what a hand-marked listing gets, and one of those leaves nothing behind.
+            product.TransactionBuyerId != null);
 
     private static IQueryable<Product> Order(IQueryable<Product> products, ProductSort sort) => sort switch
     {
@@ -627,7 +657,7 @@ internal sealed class ProductService(
         CancellationToken cancellationToken)
     {
         var product = await dbContext.Products
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, cancellationToken);
 
         if (product is null)
         {

@@ -224,7 +224,9 @@
     .on("click", "[data-action='publish']", function () { products.transition("publish"); })
     .on("click", "[data-action='offline']", function () { products.transition("offline"); })
     .on("click", "[data-action='sold']", function () { products.transition("sold"); })
-    .on("click", "[data-action='delete']", function () { products.deleteProduct(); })
+    .on("click", "[data-action='delete']", function () {
+      products.deleteProduct($(this).attr("data-keeps-trade-record"));
+    })
     .on("click", "[data-action='upload-image']", function () { products.uploadImage(); })
     .on("click", "[data-action='delete-image']", function () {
       products.deleteImage($(this).attr("data-image-id"));

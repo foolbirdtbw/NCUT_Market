@@ -66,9 +66,14 @@ internal sealed class ConversationService(
         // invisible to everyone but its seller, so a stranger guessing an id cannot confirm that
         // somebody's draft exists. The seller keeps access here only so that clicking "联系卖家" on
         // one's own listing produces the clear error below rather than a misleading 404.
+        //
+        // DeletedAt is a sharper version of the same rule and is not covered by the status test: a
+        // removed listing is still Sold, so without this a stranger could open a brand-new thread on
+        // something the seller has already cleared away.
         var product = await dbContext.Products
             .AsNoTracking()
             .Where(x => x.Id == request.ProductId
+                && x.DeletedAt == null
                 && (x.Status == ProductStatus.Published
                     || x.Status == ProductStatus.Sold
                     || x.Status == ProductStatus.InTransaction
@@ -159,7 +164,12 @@ internal sealed class ConversationService(
             .Select(x => new
             {
                 x.Id,
-                x.ProductId,
+
+                // Null in both ways the listing can go away: hard-deleted, where the FK was SET NULL,
+                // and removed by the seller, where the row is still there but its page is a 404. The
+                // frontend branches on this to drop the link and say 商品已删除, so a removed listing
+                // has to report null here or the thread offers a link into nothing.
+                ProductId = x.Product == null || x.Product.DeletedAt != null ? null : x.ProductId,
                 x.ProductTitle,
                 x.ProductThumbnailKey,
                 x.BuyerId,
@@ -205,8 +215,12 @@ internal sealed class ConversationService(
 
         ConversationTradeResponse? trade = null;
 
-        // Null once the listing has been hard-deleted. The thread survives that by design, and stays
+        // Null once the listing is gone entirely. The thread survives that by design, and stays
         // readable, but there is nothing left in it to trade.
+        //
+        // A listing the seller *removed* is the opposite case and deliberately still lands here: the
+        // row survived precisely so this panel would, and both parties keep the whole record of what
+        // was agreed and who confirmed what.
         if (header.ProductStatus is ProductStatus status)
         {
             // Only the thread the trade actually came from gets to see the confirmation columns. From

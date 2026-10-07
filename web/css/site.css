@@ -603,6 +603,11 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
 .form-card { max-width: 640px; }
 
+/* 编辑页的两段：图片和文字。图片那一段在表单外面（它不归「保存」管），所以要有个东西
+   把两段分开，不然「立即生效的图片」和「要点保存的文字」看起来是一件事。 */
+.form-section { margin: 18px 0 6px; font-size: 16px; }
+.form-card .form-section:first-of-type { margin-top: 0; }
+
 .field-stack { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field-stack label { font-weight: 700; }
 

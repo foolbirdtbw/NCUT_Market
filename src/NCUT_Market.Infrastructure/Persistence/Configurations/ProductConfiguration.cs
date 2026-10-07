@@ -40,6 +40,7 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(x => x.LastActivityAt).HasColumnType("datetime(3)");
         builder.Property(x => x.PublishedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.SoldAt).HasColumnType("datetime(3)");
+        builder.Property(x => x.DeletedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.TransactionAcceptedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.BuyerConfirmedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.SellerConfirmedAt).HasColumnType("datetime(3)");

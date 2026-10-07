@@ -21,11 +21,15 @@ internal sealed class ConversationConfiguration : IEntityTypeConfiguration<Conve
         builder.Property(x => x.UpdatedAt).HasColumnType("datetime(3)");
 
         // SET NULL, not CASCADE, for the reason NotificationConfiguration already spells out for the
-        // same situation: ProductService hard-deletes draft and offline listings, and a thread has to
-        // outlive that. Cascading would mean a seller deleting their own listing destroys the buyer's
-        // message history — the other party's data, gone as a side effect of someone else's click.
-        // ProductTitle and ProductThumbnailKey are frozen at creation to keep the row readable once
-        // ProductId is null.
+        // same situation: ProductService hard-deletes draft, offlined and hand-sold listings, and a
+        // thread has to outlive that. Cascading would mean a seller deleting their own listing
+        // destroys the buyer's message history — the other party's data, gone as a side effect of
+        // someone else's click. ProductTitle and ProductThumbnailKey are frozen at creation to keep
+        // the row readable once ProductId is null.
+        //
+        // This fires for the hard deletes only. A listing sold through the platform is marked gone
+        // rather than removed (Product.DeletedAt), so this FK still points at it and the thread
+        // keeps the trade columns it needs for the trade panel.
         builder.HasOne(x => x.Product)
             .WithMany(x => x.Conversations)
             .HasForeignKey(x => x.ProductId)

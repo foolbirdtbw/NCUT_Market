@@ -106,8 +106,8 @@ window.messages = (function ($) {
   }
 
   function headHtml(detail) {
-    /* 商品被删掉之后 productId 是 null，标题用的是建会话时冻结下来的那份。
-     * 这时候不给链接——跳过去只会看到 404。 */
+    /* productId 为 null 表示商品页打不开了，两种删法都算：真删掉的，和卖家删掉的。
+     * 这时候不给链接——跳过去只会看到 404，标题用的是建会话时冻结下来的那份。 */
     var product = detail.productId
       ? '<a href="#/products/' + detail.productId + '">' + NM.esc(detail.productTitle) + '</a>'
       : NM.esc(detail.productTitle) + '<span class="muted"> · 商品已删除</span>';
@@ -129,7 +129,10 @@ window.messages = (function ($) {
    * 可操作性完全由服务端给的事实推出来，前端不预判——点了不该点的，服务端回一句中文 409。
    * 这正是 ConversationTradeResponse 存在的理由：服务端给事实，客户端判按钮。
    *
-   * detail.trade 为 null 表示商品已被硬删除，整块不出现。
+   * detail.trade 为 null 表示商品已经整个没了（卖家自己下架或标记售出之后删掉的，那种是真删），
+   * 整块不出现。反过来，商品**走过平台交易**再被卖家删掉时这块照常出现——服务端只把它标成
+   * 已删除，行还留着，交易面板和确认过程双方都还看得到，那正是这么设计的原因。
+   * 注意这是两个独立的信号：productId 为 null 只说明商品页打不开了，不代表没有交易记录。
    * 不是本交易会话的那些线程，服务端把 acceptedAt 抹成 null，所以「这笔交易是不是我谈成的」
    * 就等价于 acceptedAt != null——别人拿下的商品在他们自己的会话里看起来和在售没区别。 */
   function tradeButton(action, label) {

@@ -125,15 +125,23 @@ public interface IProductService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a listing outright, along with its photos.
+    /// Takes a listing off the caller's hands, along with its photos where nothing else needs them.
     /// </summary>
     /// <param name="id">Primary key.</param>
     /// <param name="sellerId">The signed-in user, who must be the seller.</param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
     /// <returns>
-    /// Fails with <see cref="ErrorCodes.InvalidState"/> unless the listing is a draft or offlined.
-    /// A published listing has to be taken down first, and a sold one is kept as a record.
+    /// Fails with <see cref="ErrorCodes.InvalidState"/> unless the listing is a draft, offlined or
+    /// sold — a published one has to be taken down first, so deleting is never one click away from a
+    /// live page.
     /// </returns>
+    /// <remarks>
+    /// Two very different things happen here, and the difference is whether the listing sold through
+    /// the platform (which is what <c>TransactionBuyerId</c> records). A sale that went through it
+    /// left a trade record, and that record is not a copy of anything — it <i>is</i> the transaction
+    /// columns on this row — so the row is only marked (<c>Product.DeletedAt</c>) and the trade panel
+    /// stays readable in both parties' threads. Everything else is removed outright.
+    /// </remarks>
     Task<OperationResult<bool>> DeleteAsync(
         long id,
         long sellerId,

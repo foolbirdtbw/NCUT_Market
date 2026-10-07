@@ -39,6 +39,27 @@ public sealed class Product : IHasCreatedAt, IHasUpdatedAt, IHasVersion
     public DateTime? SoldAt { get; set; }
 
     /// <summary>
+    /// When the seller cleared this listing out of their own list, or null while it is still theirs
+    /// to manage.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only ever set on a listing sold through the platform (<see cref="TransactionBuyerId"/> is not
+    /// null). The trade record <i>is</i> the transaction columns on this row — there is no separate
+    /// table — so hard-deleting it would blank <c>ConversationTradeResponse</c> and take the trade
+    /// panel out of both parties' threads. Marking it instead keeps the panel and the whole
+    /// accept / confirm-receipt / confirm-payment history readable on both sides.
+    /// </para>
+    /// <para>
+    /// Every query that lists or opens a listing filters on this being null, so a removed listing is
+    /// gone from the feed, from 我的商品 and from its own detail page (404 for everyone, the seller
+    /// included). A listing the seller took down or marked sold by hand has no thread holding a
+    /// record of it and is still hard-deleted.
+    /// </para>
+    /// </remarks>
+    public DateTime? DeletedAt { get; set; }
+
+    /// <summary>
     /// The buyer of the trade accepted through the message thread, or null when there is none.
     /// </summary>
     /// <remarks>

@@ -5,8 +5,11 @@ namespace NCUT_Market.Core.DTOs.Messages;
 /// </summary>
 /// <param name="Id">Primary key, used to open the thread.</param>
 /// <param name="ProductId">
-/// The listing the thread is about, or null once it has been hard-deleted. The frontend uses null to
-/// decide whether the title is still a link.
+/// The listing the thread is about, as the raw foreign key — <b>not</b> nulled when the listing has
+/// gone from view, unlike <see cref="ConversationDetailResponse.ProductId"/>. Nothing in the list
+/// view reads it (the row links to the thread, not to the listing, and the title is plain text), so
+/// it is kept as-is rather than paying for a join on every page. Do not build a link out of it: it
+/// can name a listing whose page is a 404.
 /// </param>
 /// <param name="ProductTitle">
 /// Frozen at the moment the thread was created, so a deleted listing still reads correctly.

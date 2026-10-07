@@ -34,6 +34,14 @@ namespace NCUT_Market.Core.DTOs.Messages;
 /// Null on <see cref="ConversationDetailResponse.Trade"/> when the listing has been hard-deleted:
 /// there is nothing left to trade, even though the thread survives.
 /// </para>
+/// <para>
+/// A listing that sold through the platform is the reason this is not simply "the listing is
+/// gone". Its seller can clear it away, but <c>ProductService.DeleteAsync</c> only marks the row
+/// (<c>Product.DeletedAt</c>) instead of removing it, precisely so this panel and the whole
+/// accept / confirm-receipt / confirm-payment history stays readable on both sides. Note that
+/// <see cref="ConversationDetailResponse.ProductId"/> goes null in that case while this does not:
+/// the listing's page is gone, its trade is not.
+/// </para>
 /// </remarks>
 public sealed record ConversationTradeResponse(
     ProductStatus ProductStatus,

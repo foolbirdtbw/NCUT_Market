@@ -177,17 +177,25 @@ public sealed class ProductLifecycleTests(ApiFixture fixture) : IClassFixture<Ap
     }
 
     [Fact]
-    public async Task Deleting_a_sold_listing_is_refused_because_it_is_the_record_that_the_sale_happened()
+    public async Task Deleting_a_hand_marked_sold_listing_removes_it_because_no_buyer_was_ever_recorded()
     {
+        // Hand-marking sold is the seller's one-click shortcut and it records no counterparty — every
+        // Transaction* column stays null. So there is no thread holding a trade record to preserve,
+        // and the listing goes outright, files and all. A sale that went through the platform is the
+        // other case, and it is kept: see PurchaseListTests.
         var (client, _) = await fixture.CreateSignedInClientAsync();
 
         var published = await client.PublishListingAsync(fixture, "生命周期-删已售出");
-        await client.PostAsync($"/api/products/{published.Id}/sold", content: null);
+        (await client.PostAsync($"/api/products/{published.Id}/sold", content: null))
+            .EnsureSuccessStatusCode();
 
         var response = await client.DeleteAsync($"/api/products/{published.Id}");
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(ErrorCodes.InvalidState, await response.ReadCodeAsync());
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        var after = await client.GetAsync($"/api/products/{published.Id}");
+
+        Assert.Equal(HttpStatusCode.NotFound, after.StatusCode);
     }
 
     [Fact]

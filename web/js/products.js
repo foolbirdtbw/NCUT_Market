@@ -178,8 +178,12 @@ window.products = (function ($) {
 
   /* ---------- 详情 ---------- */
 
-  /* 图片区。自己的商品可以删图、加图；别人的只显示。 */
-  function galleryHtml(product, isOwner) {
+  /* 图片格子。详情页和编辑页共用同一个格子，差别只有 withRemove 那一个按钮。
+   *
+   * 加图和删图以前挂在详情页上，和「编辑」并排——同一个商品有两套入口，改一段文字要点编辑，
+   * 换一张照片要点详情页上的上传，语义上是重复的。现在详情页是纯展示（对谁都一样），
+   * 增删都收进编辑页。 */
+  function imageFiguresHtml(product, withRemove) {
     var images = product.images || [];
 
     var figures = images.map(function (image) {
@@ -197,7 +201,7 @@ window.products = (function ($) {
       return '<figure class="gallery-item">' +
         '<img src="' + NM.esc(image.url) + '"' + source + ' alt="" loading="lazy"' +
         ' data-action="view-image" data-full="' + NM.esc(image.url) + '">' +
-        (isOwner
+        (withRemove
           ? '<button class="button button-danger gallery-remove" data-action="delete-image" ' +
           'data-image-id="' + image.id + '">删除</button>'
           : '') +
@@ -206,19 +210,28 @@ window.products = (function ($) {
 
     if (!images.length) {
       figures = '<div class="gallery-empty">还没有图片。' +
-        (isOwner ? "发布前至少要有一张。" : "") + '</div>';
+        (withRemove ? "上架前至少要有一张。" : "") + '</div>';
     }
 
-    if (!isOwner) {
-      return '<div class="gallery">' + figures + '</div>';
-    }
+    return '<div class="gallery">' + figures + '</div>';
+  }
 
-    return '<div class="gallery">' + figures + '</div>' +
+  /* 详情页那一份：只读。加图和删图的控件在编辑页（见 editImagesHtml）。 */
+  function galleryHtml(product) {
+    return imageFiguresHtml(product, false);
+  }
+
+  /* 编辑页那一份：带删除按钮和上传控件。
+   *
+   * 这里的改动是**即时生效**的——加图和删图各走各的接口，不等「保存」。「保存」只管上面
+   * 那几栏文字，所以表单上那句话必须写出来，否则改完图片再点「取消」，人会以为白改了。 */
+  function editImagesHtml(product) {
+    return imageFiguresHtml(product, true) +
       '<div class="field">' +
-      '<input type="file" id="detail-image-file" accept="image/jpeg,image/png,image/webp">' +
+      '<input type="file" id="edit-image-file" accept="image/jpeg,image/png,image/webp">' +
       '<button class="button" data-action="upload-image">上传图片</button>' +
       '</div>' +
-      '<div id="detail-image-status"></div>';
+      '<div id="edit-image-status"></div>';
   }
 
   /* 按状态决定给卖家看哪些按钮。三个流转各自只在合法时出现——
@@ -235,8 +248,12 @@ window.products = (function ($) {
       buttons.push('<button class="button" data-action="sold">标记已售出</button>');
     }
 
-    if (product.status === 1 || product.status === 4) {
-      buttons.push('<button class="button button-danger" data-action="delete">删除</button>');
+    // 已售出也给删：卖家有权把一件处理完的商品从自己的列表里清掉。代价不一样——
+    // 走过平台交易的那种只做软删，交易记录留着。哪一种由服务端说了算，按钮上带一个标记
+    // 让确认框说对话（见 deleteProduct）。
+    if (product.status === 1 || product.status === 3 || product.status === 4) {
+      buttons.push('<button class="button button-danger" data-action="delete"' +
+        ' data-keeps-trade-record="' + (product.keepsTradeRecord ? "1" : "") + '">删除</button>');
     }
 
     buttons.push('<a class="button" href="#/products/' + product.id + '/edit">编辑</a>');
@@ -276,7 +293,7 @@ window.products = (function ($) {
        * 而且"有几个人在问"本来就是点进来才关心的东西。 */
       '<p class="detail-interest">最近一周 ' + product.interestedRecentCount +
       ' 人询问 · 共 ' + product.interestedTotal + ' 人询问</p>' +
-      galleryHtml(product, isOwner) +
+      galleryHtml(product) +
       (isOwner ? ownerActionsHtml(product) : contactHtml(product)) +
       '<p id="detail-error"></p>' +
       '</div>' +
@@ -317,10 +334,17 @@ window.products = (function ($) {
     });
   }
 
-  function deleteProduct() {
+  /* keepsTradeRecord 是从按钮上读的（见 ownerActionsHtml），来自服务端的 keepsTradeRecord。
+   * 两种删除的后果差得远，确认框必须说对：走过平台交易的商品点完还找得回来——交易记录留在
+   * 双方的私信里；自己下架或者自己标记售出的那种是真没了。 */
+  function deleteProduct(keepsTradeRecord) {
     var id = currentProductId();
 
-    if (!confirm("删除之后不能恢复。确定删除这个商品吗？")) {
+    var question = keepsTradeRecord
+      ? "删除之后商品不再显示，但和买家的交易记录会留在双方的私信里。确定删除吗？"
+      : "删除之后不能恢复。确定删除这个商品吗？";
+
+    if (!confirm(question)) {
       return;
     }
 
@@ -333,27 +357,37 @@ window.products = (function ($) {
     });
   }
 
+  /* 加图和删图都在编辑页上，改完只重画图片那一块，不动表单——
+   * 重画整页会把人家打了一半的标题冲掉。 */
+  function refreshEditImages(id) {
+    api.get("/api/products/" + id).then(function (product) {
+      $("#edit-images").html(editImagesHtml(product));
+    }, function (error) {
+      $("#edit-image-status").html(NM.inlineError(error));
+    });
+  }
+
   function uploadImage() {
     var id = currentProductId();
-    var input = $("#detail-image-file");
+    var input = $("#edit-image-file");
     var file = input[0] && input[0].files && input[0].files[0];
 
     if (!file) {
-      $("#detail-image-status").html(NM.inlineError({ message: "先选一张图片。" }));
+      $("#edit-image-status").html(NM.inlineError({ message: "先选一张图片。" }));
       return;
     }
 
     var formData = new FormData();
     formData.append("file", file);
 
-    $("#detail-image-status").html('<div class="loading">上传中… <span id="upload-percent">0%</span></div>');
+    $("#edit-image-status").html('<div class="loading">上传中… <span id="upload-percent">0%</span></div>');
 
     api.upload("/api/products/" + id + "/images", formData, function (percent) {
       $("#upload-percent").text(percent + "%");
     }).then(function () {
-      showDetail(id);
+      refreshEditImages(id);
     }, function (error) {
-      $("#detail-image-status").html(NM.inlineError(error));
+      $("#edit-image-status").html(NM.inlineError(error));
     });
   }
 
@@ -365,9 +399,9 @@ window.products = (function ($) {
     }
 
     api.del("/api/products/" + id + "/images/" + imageId).then(function () {
-      showDetail(id);
+      refreshEditImages(id);
     }, function (error) {
-      $("#detail-error").html(NM.inlineError(error));
+      $("#edit-image-status").html(NM.inlineError(error));
     });
   }
 
@@ -786,7 +820,13 @@ window.products = (function ($) {
         '<div class="card form-card">' +
         '<div class="card-head"><h1>编辑商品</h1>' +
         '<a class="button" href="#/products/' + product.id + '">取消</a></div>' +
+        /* 图片放在表单外面，而且不是 formFieldsHtml 的一部分：加图和删图各走各的接口，
+         * 点了就生效，不归「保存」管。要把它包进表单，人会以为点保存才提交图片。 */
+        '<h2 class="form-section">图片</h2>' +
+        '<p class="muted">加图和删图立刻生效，不用点保存。</p>' +
+        '<div id="edit-images">' + editImagesHtml(product) + '</div>' +
         '<form id="edit-form" novalidate>' +
+        '<h2 class="form-section">文字</h2>' +
         formFieldsHtml(product) +
         '<div id="form-error"></div>' +
         '<button class="button button-primary" type="submit">保存</button>' +

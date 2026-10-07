@@ -24,6 +24,11 @@ namespace NCUT_Market.Core.DTOs.Products;
 /// <param name="SoldAt">When it was marked sold. Null otherwise.</param>
 /// <param name="InterestedTotal">How many distinct users have ever opened a thread about this listing.</param>
 /// <param name="InterestedRecentCount">How many of those threads have been active in the last week.</param>
+/// <param name="KeepsTradeRecord">What "delete" will do to this listing. True when it sold through the
+/// platform: the row is only marked removed, because the trade record and the trade panel in both
+/// parties' threads are read off it. False when it was taken down or marked sold by hand, which has
+/// no record behind it and is deleted outright. The confirm dialog needs the difference — one of the
+/// two cannot be undone, and the other does not need to be.</param>
 /// <remarks>
 /// There is deliberately no field naming the trade's counterparty. The detail projection is public —
 /// anyone can read a published listing — so a buyer id here would tell every stranger who is winning
@@ -48,4 +53,5 @@ public sealed record ProductDetailResponse(
     DateTime? PublishedAt,
     DateTime? SoldAt,
     int InterestedTotal,
-    int InterestedRecentCount);
+    int InterestedRecentCount,
+    bool KeepsTradeRecord);

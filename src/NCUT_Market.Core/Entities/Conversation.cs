@@ -18,12 +18,22 @@ namespace NCUT_Market.Core.Entities;
 /// <see cref="ProductId"/> is nullable and its foreign key is SET NULL — deleting a listing must not
 /// delete the buyer's half of the conversation.
 /// </para>
+/// <para>
+/// A listing sold through the platform is never hard-deleted, only marked gone (see
+/// <see cref="Product.DeletedAt"/>), so the row here still points at it and the thread keeps its
+/// trade panel. That is the opposite case: <see cref="ProductId"/> is reported as null to clients
+/// even though the column is not, because the page it names no longer opens. Both cases have to
+/// read the same way, which is why the service nulls the projection rather than the column.
+/// </para>
 /// </remarks>
 public sealed class Conversation : IHasCreatedAt, IHasUpdatedAt
 {
     public long Id { get; set; }
 
-    /// <summary>Nulled out when the listing is hard-deleted. See the remarks on this type.</summary>
+    /// <summary>
+    /// Nulled out when the listing is hard-deleted, and also — as seen by clients — when it was
+    /// marked gone instead. See the remarks on this type.
+    /// </summary>
     public long? ProductId { get; set; }
 
     /// <summary>The listing's title as it read when the thread started.</summary>
