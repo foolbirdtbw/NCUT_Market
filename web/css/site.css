@@ -332,6 +332,34 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
   font-size: 12px;
 }
 
+/* 左边一串文字、右边两个仓库图标。分左右不为好看——挤在一行里，那行说明文字和接口文档
+   链接会连成一片，读不出哪块是哪块。 */
+.site-footer .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.footer-repos {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 两张图标不是一回事：Gitee 那张自带透明通道，本身就是个红色的圆，四角早就透出去了，
+   裁不裁一样；GitHub 那张是不透明的，白色圆盘画在黑方底上。所以裁圆是为 GitHub 那张——
+   不裁的话浅色主题下它是个黑方块，和旁边那个圆按钮并排看着就不是一套。裁完那圈黑边还在
+   （白盘没画满画布），只是变成一圈细黑环，两种主题下都不难看，不折腾了。 */
+.repo-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 /* ---------- 按钮与输入 ---------- */
 
 /* Windows 95 式凸起：白上左 + 灰下右，配银灰面。 */

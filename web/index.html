@@ -53,15 +53,22 @@
   <main class="wrap" id="view"></main>
 
   <footer class="site-footer">
-    <div class="wrap">NCUT Market ·
-      <a href="/scalar" target="_blank" rel="noopener">接口文档</a>
-      <!-- 两个远程，推的是同一份 master（见 README 的侧栏那张表）。写死的，换地方要一起改。 -->
-      <a href="https://github.com/foolbirdtbw/NCUT_Market" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://gitee.com/tian_puwen/ncut_-market" target="_blank" rel="noopener">Gitee</a>
-      <!-- 在线人数，由 app.js 拉一次填进来。没登录的游客算不进去——服务端没有会话，
-           认不出两次匿名请求是不是同一个人，所以那行说明文字不是装饰。 -->
-      <span class="online-count" id="online-count"></span>
-      <span class="online-note">近 5 分钟有活动的登录用户</span></div>
+    <div class="wrap">
+      <div>NCUT Market ·
+        <a href="/scalar" target="_blank" rel="noopener">接口文档</a>
+        <!-- 在线人数，由 app.js 拉一次填进来。没登录的游客算不进去——服务端没有会话，
+             认不出两次匿名请求是不是同一个人，所以那行说明文字不是装饰。 -->
+        <span class="online-count" id="online-count"></span>
+        <span class="online-note">近 5 分钟有活动的登录用户</span></div>
+      <!-- 仓库镜像，摆右边：左边那串文字和它挤在一起会连成一片。两个远程推同一份 master
+           （见 README 那张表）。地址写死的，换地方要一起改。 -->
+      <div class="footer-repos">
+        <a href="https://github.com/foolbirdtbw/NCUT_Market" target="_blank" rel="noopener">
+          <img class="repo-icon" src="img/github.webp" alt="GitHub"></a>
+        <a href="https://gitee.com/tian_puwen/ncut_-market" target="_blank" rel="noopener">
+          <img class="repo-icon" src="img/gitee.webp" alt="Gitee"></a>
+      </div>
+    </div>
   </footer>
 
   <script src="vendor/jquery-3.7.1.min.js"></script>
