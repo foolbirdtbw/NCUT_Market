@@ -145,7 +145,7 @@ value.replace("T", " ").slice(0, 16)
 | 分类/宿舍区字典被软删的商品挡住 | `CategoryService` / `DormitoryAreaService` 删字典项前那句 `AnyAsync(Products)` 没有排除 `deleted_at`，所以一个已经被卖家删掉的商品仍然会挡住它所属的分类。要求是先删干净字典项再删商品，实际不会撞上；真撞上了再排 |
 | 生成封面不改「上架必须有图」 | `ProductService.PublishAsync` 那道检查保留：至少一张图这条规则本身是对的，这一轮是给它配了条出路，不是把它拆掉。客户端也仍然不预检有没有图，撞到 400 才提示 |
 | `/README.md` 可公开访问 | 内容无敏感信息 |
-| 页脚的仓库链接写死在 `<footer>` 里 | Gitee 是 `origin`（`tian_puwen/ncut_-market`），GitHub 是 `github` 远程（`foolbirdtbw/NCUT_Market`），两边推同一份 master。换远程要连 `index.html` 一起改。仓库里没有 `.env`——`.gitignore` 挡着，跟踪的只有 `.env.example` 那份 `Password=replace-me` 占位值，所以推公开仓库不漏数据库密码 |
+| 页脚的仓库链接写死在 `<footer>` 里 | Gitee 是 `origin`（`tian_puwen/ncut_-market`），GitHub 是 `github` 远程（`foolbirdtbw/NCUT_Market`），两边推同一份 master。换远程要连 `index.html` 一起改——许可证那条链接也指向 GitHub，同理。仓库里没有 `.env`——`.gitignore` 挡着，跟踪的只有 `.env.example` 那份 `Password=replace-me` 占位值，所以推公开仓库不漏数据库密码 |
 | 页脚的仓库链接摆右边、用图标 | 左边那句话和「接口文档」链接挨得近，再加两个文字链接就连成一片，读不出哪块是哪块。两张图标其实不是一回事：Gitee 那张自带透明通道，本身就是个红色的圆；GitHub 那张是不透明的，白圆盘画在黑方底上，不裁的话浅色主题下就是个黑方块。所以 `border-radius: 50%` 是为 GitHub 那张加的，对 Gitee 是空操作 |
 | 图标必须放在 `web/` 下面 | `NCUT_Market.Api.csproj` 只把 `web/` 下的文件当静态内容收进发布产物。放 `db/`（或者仓库里任何别的地方）开发时能读到、发布出去就 404。所以是从 `db/` 挪到 `web/img/` 的。源图是 1280×1280 和 512×512，实际只画 20px，没有压缩——校园站不在乎这 64 KB |
 | 前后端同源部署 | 前端绑在 API 进程上，所以没有 CORS 配置 |

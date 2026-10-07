@@ -333,9 +333,11 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
 }
 
 /* 左边一串文字、右边两个仓库图标。分左右不为好看——挤在一行里，那行说明文字和接口文档
-   链接会连成一片，读不出哪块是哪块。 */
+   链接会连成一片，读不出哪块是哪块。窄屏上左边那串会自己折行；折不下时整块图标掉到第二
+   行，space-between 仍然把它推在右边。 */
 .site-footer .wrap {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
