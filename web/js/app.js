@@ -92,7 +92,7 @@
    *
    * 藏起来不是访问控制：路由守卫在 dictionaries.js / users.js 里，接口那边的判定在服务端。
    *
-   * 只有发布是藏掉的。「我的商品」「私信」「通知」不藏——未登录点进去看到的是 NM.signInCard()
+   * 只有发布是藏掉的。「个人主页」「私信」「通知」不藏——未登录点进去看到的是 NM.signInCard()
    * 那张「请先登录」，比一个凭空消失的入口好解释，也顺带告诉人登录了能干什么。 */
   function paintNavVisibility() {
     var current = auth.user();

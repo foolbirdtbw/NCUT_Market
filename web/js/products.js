@@ -1,4 +1,4 @@
-/* 商品：列表与搜索、详情、发布、编辑、我的商品。
+/* 商品：列表与搜索、详情、发布、编辑、个人主页（我的商品 / 我买到的）。
  *
  * 视图整块用 .html() 重建，事件一律委托在 document 上绑一次（在 app.js 里）。
  * 每个页面渲染完把自己需要的字典数据补进去，不预加载。 */
@@ -44,7 +44,7 @@ window.products = (function ($) {
       : '<span class="thumb-placeholder">暂无图片</span>';
 
     /* 状态徽章只在不是"在售"时出现。公开列表全是 Published，加了这个判断就等于没加；
-     * 但"我的商品"那一页草稿、已下架、已售出混在一起，不标出来分不清。 */
+     * 但"我的商品"那一列草稿、已下架、已售出混在一起，不标出来分不清。 */
     var badge = item.status && item.status !== 2 ? NM.statusBadge(item.status) + " " : "";
 
     var body =
@@ -894,20 +894,24 @@ window.products = (function ($) {
     });
   }
 
-  /* ---------- 我的商品 ---------- */
+  /* ---------- 个人主页 ---------- */
 
   function showMine(query) {
     /* 顶栏那条一直摆着，所以未登录点进来必须落在这张卡上。挡在这里而不是靠接口回 401：
      * 401 会先渲染出一张空列表，再被人弹到登录页，中间那一跳很难看。 */
     if (!auth.isSignedIn()) {
-      $("#view").html(NM.signInCard("我的商品"));
+      $("#view").html(NM.signInCard("个人主页"));
       return;
     }
 
     $("#view").html(
+      /* 页名和第一张卡的名字是两回事。这一页底下有三张卡，用第一张的名字当整页的名字，
+       * 顶栏那条入口就喊窄了——而且「我的商品」一条路径上会同时是入口、页名和卡片名。
+       * 所以 h1 是页名，各张卡退回 h2。 */
       '<div class="card">' +
-      '<div class="card-head"><h2>我的商品</h2>' +
+      '<div class="card-head"><h1>个人主页</h1>' +
       '<a class="button button-primary" href="#/products/new">发布商品</a></div>' +
+      '<h2>我的商品</h2>' +
       '<div id="mine-list">' + NM.loading() + '</div>' +
       '</div>' +
       /* 买家那一侧。两张卡各自请求、各自分页、各自失败——一张挂了不该把另一张也带走。 */

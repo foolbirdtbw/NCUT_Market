@@ -136,9 +136,12 @@ window.auth = (function ($) {
 
     var current = user() || {};
 
-    /* 顶栏只剩一个入口，退出按钮挪到「我的商品」页里了（products.js 的 showMine）——
-     * 它和导航链接长得一样、挨得又近，点错的代价是当场登出。 */
-    slot.html('<a class="nav-user" href="#/mine">' + NM.esc(current.nickname || "我的商品") + '</a>');
+    /* 顶栏只剩一个入口，退出按钮挪到个人主页里了（products.js 的 showMine）——
+     * 它和导航链接长得一样、挨得又近，点错的代价是当场登出。
+     *
+     * 兜底文本跟着页面叫「个人主页」。它几乎不会出现（注册时昵称是必填的），但顶栏左边那条
+     * 也叫这个名字，兜底要还是旧名就成了两个标签指同一个地方。 */
+    slot.html('<a class="nav-user" href="#/mine">' + NM.esc(current.nickname || "个人主页") + '</a>');
   }
 
   /* ---------- 登录 ---------- */

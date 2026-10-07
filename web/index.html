@@ -25,10 +25,12 @@
       <nav class="site-nav" id="site-nav">
         <a href="#/products">商品</a>
         <!-- data-signin-only 是给 app.js 的 paintNavVisibility() 用的：未登录时整条不显示。
-             只有发布带它——首页和商品列表里那两个发布入口也带着同一个属性。我的商品、私信、
+             只有发布带它——首页和商品列表里那两个发布入口也带着同一个属性。个人主页、私信、
              通知照常摆着，未登录点进去看到的是 NM.signInCard() 那张「请先登录」，不是空列表。 -->
         <a href="#/products/new" data-signin-only>发布</a>
-        <a href="#/mine">我的商品</a>
+        <!-- 标签跟着页面走，不跟着页面里的第一张卡走：#/mine 是三张卡的个人主页（我的商品 /
+             我买到的 / 账号），拿其中一张卡的名字当整页的名字，喊的比看到的窄。 -->
+        <a href="#/mine">个人主页</a>
         <!-- 未读数由 messages.js 追加在这条里面。导航是静态的，所以徽标不怕被重绘冲掉。 -->
         <a href="#/messages" id="nav-messages">私信</a>
         <!-- 同上，徽标由 notifications.js 追加。 -->
