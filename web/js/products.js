@@ -36,7 +36,9 @@ window.products = (function ($) {
     return NM.formatPrice(value);
   }
 
-  function cardHtml(item) {
+  /* href 传 null 就不做成链接，出一张不可点的卡片（「我买到的」要这个，见 boughtGridHtml）。
+   * 不做"省略就默认"的隐式约定——两种用法只有一处调用点，写清楚比省两个字符划算。 */
+  function cardHtml(item, href) {
     var thumb = item.thumbnailUrl
       ? '<img src="' + NM.esc(item.thumbnailUrl) + '" alt="" loading="lazy">'
       : '<span class="thumb-placeholder">暂无图片</span>';
@@ -45,7 +47,7 @@ window.products = (function ($) {
      * 但"我的商品"那一页草稿、已下架、已售出混在一起，不标出来分不清。 */
     var badge = item.status && item.status !== 2 ? NM.statusBadge(item.status) + " " : "";
 
-    return '<a class="product-card" href="#/products/' + item.id + '">' +
+    var body =
       '<div class="product-thumb">' + thumb + '</div>' +
       '<div class="product-body">' +
       '<div class="product-title">' + badge + NM.esc(item.title) + '</div>' +
@@ -54,7 +56,11 @@ window.products = (function ($) {
       NM.esc(item.dormitoryAreaName) + ' · ' + NM.esc(NM.conditionText(item.condition)) + '</div>' +
       '<div class="product-meta">' + NM.esc(item.sellerNickname) + ' · ' +
       NM.formatDateTime(item.createdAt) + '</div>' +
-      '</div></a>';
+      '</div>';
+
+    return href
+      ? '<a class="product-card" href="' + href + '">' + body + '</a>'
+      : '<div class="product-card">' + body + '</div>';
   }
 
   function gridHtml(page) {
@@ -62,7 +68,21 @@ window.products = (function ($) {
       return NM.empty("没有找到商品。换个关键词试试。");
     }
 
-    return '<div class="product-grid">' + page.items.map(cardHtml).join("") + '</div>';
+    return '<div class="product-grid">' +
+      page.items.map(function (item) { return cardHtml(item, "#/products/" + item.id); }).join("") +
+      '</div>';
+  }
+
+  /* 「我买到的」那一份。整列都不做成链接：卖家把自己列表里的商品删掉（软删）之后，那个详情页
+   * 对谁都是 404——与其一部分能点一部分点了报错，不如一张都不点，当凭据看。 */
+  function boughtGridHtml(page) {
+    if (!page.items.length) {
+      return NM.empty("还没有买到的商品。谈成之后会出现在这里。");
+    }
+
+    return '<div class="product-grid">' +
+      page.items.map(function (item) { return cardHtml(item, null); }).join("") +
+      '</div>';
   }
 
   /* ---------- 列表与搜索 ---------- */
@@ -83,6 +103,23 @@ window.products = (function ($) {
     }
 
     return "#/products" + (params.length ? "?" + params.join("&") : "");
+  }
+
+  /* 「我的商品」和「我买到的」各占一页，所以 #/mine 的 hash 里有两个页码。key 是这次要翻的
+   * 那一个，另一个原样带过去——不带的话，翻「我买到的」会把「我的商品」踢回第一页。
+   * （listHref 是同一个道理，只是那边带过去的是一堆筛选条件。） */
+  function mineHref(query, key, target) {
+    var params = [];
+
+    ["page", "boughtPage"].forEach(function (name) {
+      var value = name === key ? target : query[name];
+
+      if (value && value > 1) {
+        params.push(name + "=" + value);
+      }
+    });
+
+    return "#/mine" + (params.length ? "?" + params.join("&") : "");
   }
 
   function showList(query) {
@@ -873,6 +910,11 @@ window.products = (function ($) {
       '<a class="button button-primary" href="#/products/new">发布商品</a></div>' +
       '<div id="mine-list">' + NM.loading() + '</div>' +
       '</div>' +
+      /* 买家那一侧。两张卡各自请求、各自分页、各自失败——一张挂了不该把另一张也带走。 */
+      '<div class="card">' +
+      '<h2>我买到的</h2>' +
+      '<div id="bought-list">' + NM.loading() + '</div>' +
+      '</div>' +
       /* 退出登录在这里，不在顶栏那一排。顶栏点错的代价是当场登出，而登出按钮和导航链接
        * 长得一样、挨得又近。处理函数本来就委托在 document 上，所以这里只换了标记。 */
       '<div class="card">' +
@@ -887,9 +929,20 @@ window.products = (function ($) {
     }).then(function (page) {
       $("#mine-list").html(
         gridHtml(page) +
-        NM.pagerHtml(page, function (target) { return "#/mine?page=" + target; }));
+        NM.pagerHtml(page, function (target) { return mineHref(query, "page", target); }));
     }, function (error) {
       $("#mine-list").html(NM.errorCard(error));
+    });
+
+    api.get("/api/products/bought", {
+      page: query.boughtPage || 1,
+      pageSize: PAGE_SIZE
+    }).then(function (page) {
+      $("#bought-list").html(
+        boughtGridHtml(page) +
+        NM.pagerHtml(page, function (target) { return mineHref(query, "boughtPage", target); }));
+    }, function (error) {
+      $("#bought-list").html(NM.errorCard(error));
     });
   }
 

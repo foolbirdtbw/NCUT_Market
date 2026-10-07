@@ -686,8 +686,10 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   overflow: hidden;
 }
 
-/* hover 只改边框色。整块变底色在白底页面上会糊成一团色块。 */
-.product-card:hover { border-color: var(--accent); color: var(--text); }
+/* hover 只改边框色。整块变底色在白底页面上会糊成一团色块。
+ * 只给链接：[href] 把「我买到的」那一列不可点的卡片挡在外面——点不动的东西亮边框、
+ * 变手型光标，等于骗人。 */
+.product-card[href]:hover { border-color: var(--accent); color: var(--text); }
 
 .product-thumb {
   display: flex;
@@ -1077,8 +1079,9 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 }
 
 /* hover 上浮。没有放进令牌层给浅色共用，因为 translateY(0) 同样会建一个层叠上下文
-   ——浅色压根不需要上浮，没必要为它付这个代价。 */
-:root[data-theme="dark"] .product-card:hover,
+   ——浅色压根不需要上浮，没必要为它付这个代价。
+   .product-card 上那个 [href] 和上面浅色那条同理：「我买到的」是不可点的卡片。 */
+:root[data-theme="dark"] .product-card[href]:hover,
 :root[data-theme="dark"] .entry-card:hover {
   border-color: var(--border-strong);
   transform: translateY(-2px);
@@ -1153,7 +1156,7 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme="dark"] { --transition: none; }
 
-  :root[data-theme="dark"] .product-card:hover,
+  :root[data-theme="dark"] .product-card[href]:hover,
   :root[data-theme="dark"] .entry-card:hover,
   :root[data-theme="dark"] .button:hover:not(:disabled) { transform: none; }
 }

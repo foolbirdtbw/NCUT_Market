@@ -152,6 +152,37 @@ internal sealed class ProductService(
         return pagination.ToResult(WithThumbnailUrls(items), totalCount);
     }
 
+    public async Task<PagedResult<ProductSummaryResponse>> ListBoughtAsync(
+        long buyerId,
+        PaginationQuery pagination,
+        CancellationToken cancellationToken = default)
+    {
+        // Both halves of this test matter. Status alone would also match a trade the sweep settled
+        // by hand, and TransactionBuyerId alone would match one still in flight — this pair is
+        // "somebody bought this from somebody, and both sides said so".
+        //
+        // What it cannot match is a listing the seller marked sold themselves: that path records no
+        // counterparty at all, so its buyer is unrepresentable. See IProductService.ListBoughtAsync.
+        var products = dbContext.Products
+            .AsNoTracking()
+            .Where(x => x.TransactionBuyerId == buyerId && x.Status == ProductStatus.Sold);
+
+        var totalCount = await products.CountAsync(cancellationToken);
+
+        // No DeletedAt filter, unlike ListMineAsync: this is the buyer's receipt, and the seller
+        // tidying up their own page must not take it away. Ordered by when it sold rather than when
+        // it was published — "what did I buy lately" is the question this page answers.
+        var items = await products
+            .OrderByDescending(x => x.SoldAt)
+            .ThenByDescending(x => x.Id)
+            .Skip(pagination.Skip)
+            .Take(pagination.PageSize)
+            .Select(SummaryProjection)
+            .ToListAsync(cancellationToken);
+
+        return pagination.ToResult(WithThumbnailUrls(items), totalCount);
+    }
+
     public async Task<OperationResult<ProductDetailResponse>> GetByIdAsync(
         long id,
         long? viewerId,

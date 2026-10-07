@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using NCUT_Market.Core.Common;
 using NCUT_Market.Core.DTOs.Products;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Metadata.Profiles.Exif;
@@ -186,5 +187,26 @@ internal static class ProductTestSupport
         using var document = System.Text.Json.JsonDocument.Parse(json);
 
         return document.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
+    }
+
+    /// <summary>One page of the caller's completed purchases, newest sale first.</summary>
+    /// <remarks>
+    /// A page size nobody would ask for in production, because the callers count and search by id
+    /// rather than read a page. The test database is shared and accumulates, so a default-sized page
+    /// could truncate the very row a test is looking for — and the failure would read as a missing
+    /// purchase.
+    /// </remarks>
+    public static async Task<IReadOnlyList<ProductSummaryResponse>> ListBoughtAsync(
+        this HttpClient client)
+    {
+        var response = await client.GetAsync("/api/products/bought?pageSize=100");
+
+        response.EnsureSuccessStatusCode();
+
+        var page = await response.Content
+            .ReadFromJsonAsync<PagedResult<ProductSummaryResponse>>()
+            ?? throw new InvalidOperationException("Listing purchases returned no body.");
+
+        return page.Items;
     }
 }

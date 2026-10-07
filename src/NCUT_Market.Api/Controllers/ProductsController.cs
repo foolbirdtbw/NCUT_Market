@@ -71,6 +71,34 @@ public sealed class ProductsController(IProductService productService) : Control
         return Ok(result);
     }
 
+    /// <summary>The listings the signed-in user bought through the platform and completed.</summary>
+    /// <param name="pagination">Page and page size.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="200">The requested page, newest sale first.</response>
+    /// <response code="401">No token.</response>
+    /// <remarks>
+    /// <para>
+    /// Includes listings their sellers have since removed from view, because this is the buyer's
+    /// receipt. Their detail pages are 404 by then, so a client should not turn these into links.
+    /// </para>
+    /// <para>
+    /// Like <c>mine</c>, declared before <c>{id:long}</c> and for the same reason: "bought" is not a
+    /// long, so the two templates cannot collide.
+    /// </para>
+    /// </remarks>
+    [HttpGet("bought")]
+    [Authorize]
+    [ProducesResponseType<PagedResult<ProductSummaryResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<PagedResult<ProductSummaryResponse>>> ListBought(
+        [FromQuery] PaginationQuery pagination,
+        CancellationToken cancellationToken)
+    {
+        var result = await productService.ListBoughtAsync(User.GetUserId(), pagination, cancellationToken);
+
+        return Ok(result);
+    }
+
     /// <summary>One listing in full.</summary>
     /// <param name="id">Primary key.</param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>

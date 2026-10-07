@@ -43,6 +43,36 @@ public interface IProductService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// One page of the listings the caller bought and completed, newest sale first.
+    /// </summary>
+    /// <param name="buyerId">The signed-in user, as the buyer.</param>
+    /// <param name="pagination">Page and page size.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <remarks>
+    /// <para>
+    /// "Bought" is <c>TransactionBuyerId == buyerId &amp;&amp; Status == Sold</c>, and both halves are
+    /// load-bearing. A trade that nobody confirmed is rolled back by the sweep, which clears
+    /// <c>TransactionBuyerId</c> but has already been through <see cref="Enums.ProductStatus.Sold"/>
+    /// long enough to matter — so the status alone would list trades that never happened.
+    /// </para>
+    /// <para>
+    /// The other direction is the one that bites: a seller marking a listing sold by hand writes
+    /// <c>Status = Sold</c> and leaves every <c>Transaction*</c> column null, because there is no
+    /// counterparty to record. Those sales are invisible here and always will be. See
+    /// <see cref="MarkSoldAsync"/>.
+    /// </para>
+    /// <para>
+    /// Soft-deleted listings <i>are</i> included, unlike <see cref="ListMineAsync"/>. This list is
+    /// the buyer's receipt, not the seller's working set: a seller tidying their own page should not
+    /// erase what somebody else paid for.
+    /// </para>
+    /// </remarks>
+    Task<PagedResult<ProductSummaryResponse>> ListBoughtAsync(
+        long buyerId,
+        PaginationQuery pagination,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// One listing in full.
     /// </summary>
     /// <param name="id">Primary key.</param>
