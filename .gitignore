@@ -26,3 +26,8 @@ coverage*.xml
 # Written by db/seed-demo.ps1 — it lists the generated demo accounts, which are throwaway
 # local rows, not something a clone should inherit.
 db/demo-accounts.txt
+
+# Deployment scripts and the systemd unit, written for our own server. They hard-code that one
+# machine's paths, service name and upload dir, so they are not something a clone should
+# inherit — and the live server is driven by hand now, which leaves them unmaintained.
+deploy/
