@@ -144,6 +144,55 @@ internal sealed class TransactionService(AppDbContext dbContext) : ITransactionS
         return await SaveAsync(cancellationToken);
     }
 
+    public async Task<OperationResult<bool>> CancelAsync(
+        long conversationId,
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        var (context, failure) = await LoadAsync(conversationId, userId, cancellationToken);
+
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var (conversation, product) = context;
+
+        if (conversation.TransactionProposedAt is null)
+        {
+            return OperationResult<bool>.Failure(
+                ErrorCodes.InvalidState,
+                "这个会话里没有待处理的交易提议。");
+        }
+
+        // Deliberately no deadline check and no listing-status check, unlike AcceptAsync. Accepting
+        // a stale proposal would seize a listing the sweep is about to free up; dropping one only
+        // does the sweep's job a quarter of an hour early. And nothing here writes to the product —
+        // it is read for its id alone — so the seller taking the listing down must not trap a buyer
+        // in a proposal they can no longer withdraw.
+        //
+        // Judged before the two columns are cleared: afterwards there is no telling which button
+        // was pressed.
+        var withdrawn = conversation.TransactionProposedById == userId;
+
+        Notify(
+            PeerOf(conversation, userId),
+            product.Id,
+            NotificationType.TransactionCancelled,
+            withdrawn ? "交易提议已撤回" : "交易提议被拒绝",
+            withdrawn
+                ? $"「{conversation.ProductTitle}」的交易提议，对方撤回了。"
+                : $"「{conversation.ProductTitle}」的交易提议，对方拒绝了。");
+
+        // Only this thread. AcceptAsync clears every other pending proposal on the listing as well,
+        // because a listing can only be sold once and those offers lose their meaning with it. A
+        // decline is between two people: the other buyers never hear of it and keep their offers.
+        conversation.TransactionProposedById = null;
+        conversation.TransactionProposedAt = null;
+
+        return await SaveAsync(cancellationToken);
+    }
+
     public Task<OperationResult<bool>> ConfirmReceiptAsync(
         long conversationId,
         long userId,

@@ -229,6 +229,32 @@ public sealed class ConversationsController(
             : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
     }
 
+    /// <summary>Declines the offer in a thread, or withdraws your own. Either party may.</summary>
+    /// <param name="id">Thread id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Dropped.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="404">No such thread, or the caller is not in it.</response>
+    /// <response code="409">There is no offer waiting in this thread.</response>
+    /// <remarks>
+    /// One route for both readings of the action: the recipient calls it declining, the proposer calls
+    /// it withdrawing, and the thread ends up the same either way. That is why there is no 403 here —
+    /// unlike receipt and payment, there is no wrong party.
+    /// </remarks>
+    [HttpPost("{id:long}/transaction/cancel")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CancelTrade(long id, CancellationToken cancellationToken)
+    {
+        var result = await transactionService.CancelAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
     /// <summary>The buyer confirms receipt. Completes the trade if the seller has confirmed.</summary>
     /// <param name="id">Thread id.</param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>

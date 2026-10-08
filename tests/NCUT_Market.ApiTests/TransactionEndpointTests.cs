@@ -325,4 +325,143 @@ public sealed class TransactionEndpointTests(ApiFixture fixture) : IClassFixture
         Assert.Equal(3, after.InterestedTotal);
         Assert.Equal(2, after.InterestedRecentCount);
     }
+
+    [Fact]
+    public async Task The_other_party_can_decline_a_proposal_and_the_listing_is_untouched()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "交易-拒绝");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        (await buyer.ProposeTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        (await seller.CancelTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        Assert.Equal((null, null), await fixture.ProposalStateAsync(thread.Id));
+
+        // A proposal never moved the listing, so undoing one must not move it either.
+        Assert.Equal(ProductStatus.Published, (await fixture.TradeStateAsync(listing.Id)).Status);
+        Assert.True(await fixture.CreateAnonymousClient().IsInPublicFeedAsync(listing.Id, "交易-拒绝"));
+
+        // The reason this action exists: the proposer is told it was turned down, instead of waiting
+        // out the day and being told it expired.
+        Assert.Contains(
+            await buyer.ListNotificationsAsync(),
+            x => x.Type == NotificationType.TransactionCancelled);
+    }
+
+    [Fact]
+    public async Task The_proposer_can_withdraw_their_own_proposal()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "交易-撤回");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        (await buyer.ProposeTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        // The same endpoint the seller would have used to decline it — the proposer is not stuck
+        // waiting out the day either.
+        (await buyer.CancelTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        Assert.Equal((null, null), await fixture.ProposalStateAsync(thread.Id));
+        Assert.Equal(ProductStatus.Published, (await fixture.TradeStateAsync(listing.Id)).Status);
+
+        // This time the notice goes the other way: the seller is the one who waited.
+        Assert.Contains(
+            await seller.ListNotificationsAsync(),
+            x => x.Type == NotificationType.TransactionCancelled);
+    }
+
+    [Fact]
+    public async Task Declining_only_drops_this_threads_proposal()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (firstBuyer, _) = await fixture.CreateSignedInClientAsync();
+        var (secondBuyer, secondAuth) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "交易-只清一条");
+        var firstThread = await firstBuyer.StartConversationAsync(listing.Id);
+        var secondThread = await secondBuyer.StartConversationAsync(listing.Id);
+
+        (await firstBuyer.ProposeTradeAsync(firstThread.Id)).EnsureSuccessStatusCode();
+        (await secondBuyer.ProposeTradeAsync(secondThread.Id)).EnsureSuccessStatusCode();
+
+        (await seller.CancelTradeAsync(firstThread.Id)).EnsureSuccessStatusCode();
+
+        Assert.Equal((null, null), await fixture.ProposalStateAsync(firstThread.Id));
+
+        // Accepting clears every other offer on the listing, because a listing sells once and the
+        // rest lose their meaning with it. A decline is between two people — the other buyer never
+        // hears of it, so copying that sweep here would withdraw their offer behind their back.
+        var kept = await fixture.ProposalStateAsync(secondThread.Id);
+
+        Assert.Equal(secondAuth.User.Id, kept.ProposedById);
+        Assert.NotNull(kept.ProposedAt);
+    }
+
+    [Fact]
+    public async Task A_declined_proposal_can_be_made_again_straight_away()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, buyerAuth) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "交易-拒绝后再来");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        (await buyer.ProposeTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+        (await seller.CancelTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        // No cooldown and nothing remembered: a decline clears the offer, and the listing was on sale
+        // throughout, so the precondition for proposing is satisfied again the moment it goes.
+        (await buyer.ProposeTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        var again = await fixture.ProposalStateAsync(thread.Id);
+
+        Assert.Equal(buyerAuth.User.Id, again.ProposedById);
+        Assert.NotNull(again.ProposedAt);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_thread_with_no_proposal_is_refused()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "交易-没提议可拒");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        var response = await seller.CancelTradeAsync(thread.Id);
+
+        await response.AssertFailureAsync(HttpStatusCode.Conflict);
+        Assert.Equal(ErrorCodes.InvalidState, await response.ReadCodeAsync());
+        Assert.Equal((null, null), await fixture.ProposalStateAsync(thread.Id));
+    }
+
+    [Fact]
+    public async Task A_stranger_cannot_touch_a_proposal()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, buyerAuth) = await fixture.CreateSignedInClientAsync();
+        var (stranger, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "交易-陌生人拒绝");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        (await buyer.ProposeTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        // Membership is part of the query, so a thread that is not yours reads as one that is not
+        // there — the same answer conversation reads give, and one that confirms nothing about ids.
+        var response = await stranger.CancelTradeAsync(thread.Id);
+
+        await response.AssertFailureAsync(HttpStatusCode.NotFound);
+
+        var kept = await fixture.ProposalStateAsync(thread.Id);
+
+        Assert.Equal(buyerAuth.User.Id, kept.ProposedById);
+        Assert.NotNull(kept.ProposedAt);
+    }
 }

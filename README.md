@@ -181,7 +181,8 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 1. **开会话** — `POST /api/conversations`，带商品 id。按唯一索引 `(product_id, buyer_id)` find-or-create，重复点「联系卖家」拿到的是同一个会话（两次都是 200）。会话创建时把商品标题和缩略图**冻**在里面——之后商品被删了，会话里那串标题还在。不能联系自己。
 2. **发起交易** — `POST /api/conversations/{id}/transaction`。要求商品是 `Published`，且这个会话没有待接受的提议。写 `conversations.transaction_proposed_by_id` / `transaction_proposed_at`。**此时商品还在售**。
 3. **接受** — `POST .../transaction/accept`，由**对方**点（发起人自己接受是 409）。写 `products.transaction_buyer_id = 会话的 buyer_id`、`transaction_accepted_at`，状态转 `InTransaction`，并**清掉同一个商品上其它会话的提议**（后来的把先前的挤掉）。
-4. **双方确认** — 买家 `POST .../transaction/receipt`（确认收货），卖家 `POST .../transaction/payment`（确认收款）。各自只写自己那一列 `buyer_confirmed_at` / `seller_confirmed_at`。**两列都非空才算成交**：状态转 `Sold`、写 `sold_at`。这一步**幂等**——已经 `Sold` 了再点返回成功，不报错。
+4. **拒绝 / 撤回** — `POST .../transaction/cancel`，**两边谁点都行**：不是发起方点叫拒绝，就是发起方点叫撤回。两者是同一个转换——清掉这两列、给对方写一条通知，标题按点击者是谁分两句（「交易提议被拒绝」/「交易提议已撤回」）。**只清这一条会话**，同一商品上别的会话的提议不受影响（和「接受」不同）。商品自始至终没动过，所以拒绝之后可以立刻重新发起，没有冷却期。既没有 403 也没有过期检查：`accept` 会占住商品，`cancel` 不会。
+5. **双方确认** — 买家 `POST .../transaction/receipt`（确认收货），卖家 `POST .../transaction/payment`（确认收款）。各自只写自己那一列 `buyer_confirmed_at` / `seller_confirmed_at`。**两列都非空才算成交**：状态转 `Sold`、写 `sold_at`。这一步**幂等**——已经 `Sold` 了再点返回成功，不报错。
 
 **超时兜底**（`TransactionSweepJob`，每 **15 分钟**一轮，`BackgroundJobs:Enabled` 可关）。`ProposalLifetime` 和 `TransactionLifetime` 都是 **1 天**，三趟：
 
@@ -254,7 +255,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 |---|---|
 | `api/auth` | `POST register`、`POST login`、`POST reset-password` 匿名；`GET me` 需登录 |
 | `api/products` | `GET`（匿名，带筛选排序）、`GET {id}`（匿名，草稿只有卖家看得见）、`GET mine`、`GET bought`；`POST`、`PUT {id}`、`POST {id}/publish`、`POST {id}/offline`、`POST {id}/sold`、`DELETE {id}`、`POST {id}/images`、`DELETE {id}/images/{imageId}` 需登录且校验归属 |
-| `api/conversations` | `GET`、`GET unread-count`、`POST`、`GET {id}`、`POST {id}/messages`、`POST {id}/read`、`POST {id}/transaction`、`.../transaction/accept`、`.../receipt`、`.../payment`——全需登录，且**非参与方 404** |
+| `api/conversations` | `GET`、`GET unread-count`、`POST`、`GET {id}`、`POST {id}/messages`、`POST {id}/read`、`POST {id}/transaction`、`.../transaction/accept`、`.../cancel`、`.../receipt`、`.../payment`——全需登录，且**非参与方 404** |
 | `api/notifications` | `GET`、`GET unread-count`、`POST {id}/read` |
 | `api/categories` | `GET` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/dormitory-areas` | `GET`、`GET {id}` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |

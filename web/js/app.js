@@ -250,7 +250,7 @@
       event.preventDefault();
       messages.send();
     })
-    /* 四个交易动作一个处理函数。按钮在 messages.js 里渲染，路径表也在那边，
+    /* 六个交易动作一个处理函数。按钮在 messages.js 里渲染，路径表也在那边，
      * 这里只负责把点击转发过去，并把通知徽标的刷新接上——交易动作会给双方都写通知，
      * 包括我自己。 */
     .on("click", "[data-action^='trade-']", function () {

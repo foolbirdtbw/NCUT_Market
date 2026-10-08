@@ -135,9 +135,11 @@ window.messages = (function ($) {
    * 注意这是两个独立的信号：productId 为 null 只说明商品页打不开了，不代表没有交易记录。
    * 不是本交易会话的那些线程，服务端把 acceptedAt 抹成 null，所以「这笔交易是不是我谈成的」
    * 就等价于 acceptedAt != null——别人拿下的商品在他们自己的会话里看起来和在售没区别。 */
-  function tradeButton(action, label) {
-    return '<button class="button button-primary" data-action="trade-' + action + '">' +
-      NM.esc(label) + '</button>';
+  /* 第三个参数给「拒绝/撤回」这类不由我主动推进的动作。两个按钮并排时都是主色的话，
+     点哪个就得先把字读完——次按钮把「接受」让出来。 */
+  function tradeButton(action, label, secondary) {
+    return '<button class="button' + (secondary ? "" : " button-primary") +
+      '" data-action="trade-' + action + '">' + NM.esc(label) + '</button>';
   }
 
   function tradeHtml(detail, myId) {
@@ -159,9 +161,10 @@ window.messages = (function ($) {
         action = tradeButton("propose", "发起交易");
       } else if (mine) {
         note = "你发起了交易，等待对方确认。一天内没有回应会自动取消。";
+        action = tradeButton("withdraw", "撤回交易", true);
       } else {
         note = "对方发起了交易。";
-        action = tradeButton("accept", "接受交易");
+        action = tradeButton("accept", "接受交易") + tradeButton("reject", "拒绝交易", true);
       }
     } else if (status === 5 && trade.acceptedAt) {
       note = "交易进行中。双方各确认一次就完成了。";
@@ -306,25 +309,35 @@ window.messages = (function ($) {
 
   /* ---------- 交易动作 ---------- */
 
-  /* 四个按钮共用一个执行器：POST 一下，失败就把中文原因写回面板。
+  /* 「撤回」和「拒绝」是同一个后端的两个读法，两行同一个 URL。分成两个名字纯粹是为了让
+     确认弹窗只挂在撤回上——它是唯一一个一键生效、不可逆、还会推通知给对方的动作，
+     而拒绝紧挨着「接受」，后果却轻（对方马上能再发起）。名字对得上按钮，URL 对得上接口。 */
+  var TRADE_PATHS = {
+    "trade-propose": "",
+    "trade-accept": "/accept",
+    "trade-withdraw": "/cancel",
+    "trade-reject": "/cancel",
+    "trade-receipt": "/receipt",
+    "trade-payment": "/payment"
+  };
+
+  /* 六个按钮共用一个执行器：POST 一下，失败就把中文原因写回面板。
    *
    * 成功之后重拉整个会话而不是就地改 DOM——和服务端状态对齐的唯一做法，
    * 和发消息那条路一样。重拉还会顺带把面板本身换成新状态，不用单独维护一套状态机。
    *
    * onDone 由 app.js 传进来（通知徽标刷新）。这里不直接调 notifications：
    * 这个仓库的模块之间不互相调用，接线统一在 app.js。 */
-  var TRADE_PATHS = {
-    "trade-propose": "",
-    "trade-accept": "/accept",
-    "trade-receipt": "/receipt",
-    "trade-payment": "/payment"
-  };
-
   function tradeAction(action, onDone) {
     var id = currentThreadId();
     var path = TRADE_PATHS[action];
 
     if (!id || path === undefined) {
+      return;
+    }
+
+    if (action === "trade-withdraw" &&
+        !confirm("撤回之后对方会收到通知。确定撤回这次交易提议吗？")) {
       return;
     }
 

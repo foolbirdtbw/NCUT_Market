@@ -12,7 +12,7 @@ namespace NCUT_Market.ApiTests;
 /// The trade request sequences the tests repeat.
 /// </summary>
 /// <remarks>
-/// The four trade actions all return 204 with no body, so the helpers cannot hand back anything
+/// The five trade actions all return 204 with no body, so the helpers cannot hand back anything
 /// useful the way <c>MessageTestSupport</c>'s do. They return the raw response instead and leave the
 /// assertion to the caller — a trade action's status code is usually the thing under test.
 /// </remarks>
@@ -25,6 +25,10 @@ internal static class TransactionTestSupport
     /// <summary>Takes up the offer in a thread.</summary>
     public static Task<HttpResponseMessage> AcceptTradeAsync(this HttpClient client, long conversationId) =>
         client.PostAsync($"/api/conversations/{conversationId}/transaction/accept", null);
+
+    /// <summary>Declines the offer in a thread, or withdraws your own. The listing is untouched either way.</summary>
+    public static Task<HttpResponseMessage> CancelTradeAsync(this HttpClient client, long conversationId) =>
+        client.PostAsync($"/api/conversations/{conversationId}/transaction/cancel", null);
 
     /// <summary>The buyer confirms receipt.</summary>
     public static Task<HttpResponseMessage> ConfirmReceiptAsync(this HttpClient client, long conversationId) =>

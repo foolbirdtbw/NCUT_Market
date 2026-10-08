@@ -69,6 +69,27 @@ public interface ITransactionService
         long userId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Drops the pending proposal in a thread — the other party declining it, or the proposer taking
+    /// it back. Both are the same transition; only the wording of the notice differs.
+    /// </summary>
+    /// <param name="conversationId">The thread holding the offer.</param>
+    /// <param name="userId">The signed-in user, on either side of the thread.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <returns>
+    /// Fails with <see cref="ErrorCodes.InvalidState"/> when the thread has no proposal waiting.
+    /// </returns>
+    /// <remarks>
+    /// Leaves the listing alone. A proposal never moved it in the first place, so undoing one must not
+    /// touch it either — and unlike <see cref="AcceptAsync"/>, neither the one-day deadline nor the
+    /// listing's status is checked: either party is entitled to call this off at any moment, including
+    /// after the listing stopped being sellable.
+    /// </remarks>
+    Task<OperationResult<bool>> CancelAsync(
+        long conversationId,
+        long userId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Records that the buyer has the item. Completes the trade if the seller has confirmed.</summary>
     /// <param name="conversationId">The thread the trade came from.</param>
     /// <param name="userId">The signed-in user, who must be the buyer of <em>this</em> trade.</param>
