@@ -148,4 +148,91 @@ public sealed class NotificationEndpointTests(ApiFixture fixture) : IClassFixtur
             HttpStatusCode.Unauthorized,
             (await anonymous.PostAsync("/api/notifications/1/read", null)).StatusCode);
     }
+
+    [Fact]
+    public async Task The_list_carries_the_product_title()
+    {
+        var (seller, _, productId, _) = await StartTradeAsync("通知-组标题");
+
+        var notice = (await seller.ListNotificationsAsync()).First(x => x.RelatedProductId == productId);
+
+        // Not frozen into Title or Content — read live off the row at list time, so the client has
+        // something to group by. It is what the group header is drawn from.
+        Assert.Equal("通知-组标题", notice.ProductTitle);
+    }
+
+    [Fact]
+    public async Task Deleting_a_notification_removes_it_for_me_alone()
+    {
+        var (seller, buyer, productId, threadId) = await StartTradeAsync("通知-单条删除");
+
+        // Give both sides one more, so a deleted row has a sibling to be distinguished from.
+        (await buyer.ConfirmReceiptAsync(threadId)).EnsureSuccessStatusCode();
+
+        var mine = (await seller.ListNotificationsAsync()).First(x => x.RelatedProductId == productId);
+        var theirs = (await buyer.ListNotificationsAsync()).First(x => x.RelatedProductId == productId);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await seller.DeleteNotificationAsync(mine.Id)).StatusCode);
+
+        Assert.DoesNotContain(await seller.ListNotificationsAsync(), x => x.Id == mine.Id);
+
+        // A real delete, not a hide: the second click has nothing to find.
+        Assert.Equal(HttpStatusCode.NotFound, (await seller.DeleteNotificationAsync(mine.Id)).StatusCode);
+
+        // And the buyer's own row is a separate row entirely — a notification has exactly one reader.
+        Assert.Contains(await buyer.ListNotificationsAsync(), x => x.Id == theirs.Id);
+    }
+
+    [Fact]
+    public async Task A_stranger_cannot_delete_my_notification()
+    {
+        var (seller, _, productId, _) = await StartTradeAsync("通知-外人删");
+
+        var (stranger, _) = await fixture.CreateSignedInClientAsync();
+        var target = (await seller.ListNotificationsAsync()).First(x => x.RelatedProductId == productId);
+
+        var response = await stranger.DeleteNotificationAsync(target.Id);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains(await seller.ListNotificationsAsync(), x => x.Id == target.Id);
+    }
+
+    [Fact]
+    public async Task Deleting_a_product_group_drops_only_that_listings_notices()
+    {
+        // One account in a trade on each of two listings, so "only that listing's" is a real claim
+        // rather than a list with one group in it.
+        var (firstSeller, _) = await fixture.CreateSignedInClientAsync();
+        var (secondSeller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var first = await firstSeller.PublishListingAsync(fixture, "通知-整组删除甲");
+        var second = await secondSeller.PublishListingAsync(fixture, "通知-整组删除乙");
+
+        var firstThread = await buyer.StartConversationAsync(first.Id);
+        var secondThread = await buyer.StartConversationAsync(second.Id);
+
+        (await buyer.ProposeTradeAsync(firstThread.Id)).EnsureSuccessStatusCode();
+        (await firstSeller.AcceptTradeAsync(firstThread.Id)).EnsureSuccessStatusCode();
+
+        (await buyer.ProposeTradeAsync(secondThread.Id)).EnsureSuccessStatusCode();
+        (await secondSeller.AcceptTradeAsync(secondThread.Id)).EnsureSuccessStatusCode();
+
+        var before = await buyer.ListNotificationsAsync();
+        Assert.Contains(before, x => x.RelatedProductId == first.Id);
+        Assert.Contains(before, x => x.RelatedProductId == second.Id);
+
+        var response = await buyer.DeleteNotificationGroupAsync(first.Id);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        var after = await buyer.ListNotificationsAsync();
+        Assert.DoesNotContain(after, x => x.RelatedProductId == first.Id);
+        Assert.Contains(after, x => x.RelatedProductId == second.Id);
+
+        // Clicking again is not an error — the scope is already mine, so an empty match is an empty
+        // group rather than a wrong id.
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await buyer.DeleteNotificationGroupAsync(first.Id)).StatusCode);
+    }
 }

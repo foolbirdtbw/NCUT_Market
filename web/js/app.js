@@ -250,6 +250,21 @@
       event.preventDefault();
       messages.send();
     })
+    /* 回车发送。textarea 原生不会因为回车提交表单，所以这里自己转一次——和提交按钮
+     * 走同一个 messages.send()，两条路不会跑偏。
+     *
+     * Shift+Enter 留给换行：气泡是按 pre-wrap 显示的，换行是真有用的东西，不能一并吃掉。
+     *
+     * isComposing 那一问是必须的，不是保险：中文输入法也用回车选词，不挡的话一句话打到
+     * 一半，选个字就把半截发出去了。 */
+    .on("keydown", "#message-input", function (event) {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+        return;
+      }
+
+      event.preventDefault();
+      messages.send();
+    })
     /* 六个交易动作一个处理函数。按钮在 messages.js 里渲染，路径表也在那边，
      * 这里只负责把点击转发过去，并把通知徽标的刷新接上——交易动作会给双方都写通知，
      * 包括我自己。 */
@@ -258,6 +273,16 @@
     })
     .on("click", "[data-action='open-notification']", function () {
       notifications.open($(this).attr("data-notification-id"));
+    })
+    /* 删除会话的行不在 <a> 里（在 messages.js 的 rowWrapperHtml 里说明过为什么），
+     * 所以这里点它不会顺带跳到会话页。 */
+    .on("click", "[data-action='delete-conversation']", function () {
+      messages.remove($(this).attr("data-conversation-id"));
+    })
+    /* 两个参数只会来一个：整组（商品还在）或单条（商品已经硬删了）。
+     * 组内的每条仍是上面 open-notification 那条路，删和读各占一层。 */
+    .on("click", "[data-action='delete-notice']", function () {
+      notifications.remove($(this).attr("data-product-id"), $(this).attr("data-notification-id"));
     })
     .on("submit", "#announcement-form", function (event) {
       event.preventDefault();

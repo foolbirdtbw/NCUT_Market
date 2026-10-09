@@ -50,7 +50,7 @@ window.messages = (function ($) {
   }
 
   function rowHtml(item) {
-    return '<a class="conv-item' + (item.hasUnread ? " is-unread" : "") +
+    return '<a class="conv-item' + (item.unreadCount > 0 ? " is-unread" : "") +
       '" href="#/messages/' + item.id + '">' +
       avatarHtml(item.peerNickname) +
       '<span class="conv-main">' +
@@ -59,8 +59,24 @@ window.messages = (function ($) {
       NM.esc(item.lastMessagePreview || "还没有消息。") + '</span>' +
       '<span class="conv-product">' + NM.esc(item.productTitle) + '</span>' +
       '</span>' +
-      '<span class="conv-meta">' + NM.formatDateTime(item.lastMessageAt) + '</span>' +
+      '<span class="conv-meta">' +
+      /* 条数，不是「有未读」那个点。顶栏徽标数的是会话数（几个线程在等我），
+         这一行数的是消息数（几句话说完了没看）——两个口径，各说各的。 */
+      (item.unreadCount > 0
+        ? '<span class="conv-unread">' + (item.unreadCount > 99 ? "99+" : item.unreadCount) + '</span>'
+        : '') +
+      NM.formatDateTime(item.lastMessageAt) +
+      '</span>' +
       '</a>';
+  }
+
+  /* 删除按钮放在链接外面。嵌在 <a> 里的话，点它既不好阻止跳转，键盘上也只算「激活链接」——
+   * 同一个动作两种说法。外面那一层只负责把它们并排放。 */
+  function rowWrapperHtml(item) {
+    return '<div class="conv-row">' + rowHtml(item) +
+      '<button class="button button-danger" data-action="delete-conversation"' +
+      ' data-conversation-id="' + item.id + '">删除</button>' +
+      '</div>';
   }
 
   function showList(query) {
@@ -88,9 +104,27 @@ window.messages = (function ($) {
       }
 
       $("#conv-list").html(
-        '<div class="conv-list">' + page.items.map(rowHtml).join("") + '</div>' +
+        '<div class="conv-list">' + page.items.map(rowWrapperHtml).join("") + '</div>' +
         NM.pagerHtml(page, function (target) { return "#/messages?page=" + target; }));
     }, function (error) {
+      $("#conv-list").html(NM.errorCard(error));
+    });
+  }
+
+  /* 删掉的是我列表里的这一行，不是这条会话：对方那边原封不动，我也没丢任何消息——
+   * 谁再写一句话它就回来。确认框得把这两件事都说清楚，不然「删除」两个字会让人以为
+   * 是把记录清了。 */
+  function remove(id) {
+    if (!confirm("删除之后这条会话从你的列表里消失，对方那边不受影响。" +
+        "对方再发消息会话会回来。确定删除吗？")) {
+      return;
+    }
+
+    api.del("/api/conversations/" + id).then(function () {
+      location.hash = "#/messages";
+      refreshUnread();
+    }, function (error) {
+      // 「这笔交易还在进行中」这类都在这里显示。列表已经渲染过了，就地放错误卡片。
       $("#conv-list").html(NM.errorCard(error));
     });
   }
@@ -195,8 +229,18 @@ window.messages = (function ($) {
       '</div>';
   }
 
-  function messageHtml(message, myId) {
+  function messageHtml(message, myId, peerLastReadAt) {
     var mine = message.senderId === myId;
+
+    /* 回执只给自己发出去的气泡。判断是「这条的时间不晚于对方的已读戳」——对方的戳一移，
+     * 他读过的那一串就一起变成已读。没有轮询，所以这是我下次打开这一页时看到的样子，
+     * 不是实时的。
+     *
+     * 单独一个 span 而不是跟时间戳拼成一串：它是状态，不是时间，得能一眼扫出来。
+     * 没读到的那些什么都不显示——「没有回执」本身就是那个状态。 */
+    var receipt = mine && peerLastReadAt && NM.atOrBefore(message.createdAt, peerLastReadAt)
+      ? ' · <span class="bubble-read">已读</span>'
+      : "";
 
     return '<div class="bubble ' + (mine ? "bubble-mine" : "bubble-peer") + '">' +
       // 换行交给 CSS 的 white-space: pre-wrap，不在这里替成 <br>——
@@ -204,7 +248,7 @@ window.messages = (function ($) {
       '<div class="bubble-text">' + NM.esc(message.content) + '</div>' +
       '<div class="bubble-meta">' +
       (mine ? "" : NM.esc(message.senderNickname) + " · ") +
-      NM.formatDateTime(message.createdAt) + '</div>' +
+      NM.formatDateTime(message.createdAt) + receipt + '</div>' +
       '</div>';
   }
 
@@ -230,7 +274,9 @@ window.messages = (function ($) {
         '<div class="card">' +
         '<div class="thread-messages" id="thread-messages">' +
         (messages.items.length
-          ? messages.items.map(function (message) { return messageHtml(message, myId); }).join("")
+          ? messages.items.map(function (message) {
+              return messageHtml(message, myId, detail.peerLastReadAt);
+            }).join("")
           : NM.empty("还没有消息。打个招呼吧。")) +
         '</div>' +
         /* 接口给的是最新一页。往上翻旧消息这一轮不做，但要说明白少了什么，
@@ -241,7 +287,7 @@ window.messages = (function ($) {
           : '') +
         '<form id="message-form" class="thread-form">' +
         '<textarea id="message-input" rows="2" maxlength="500" ' +
-        'placeholder="写点什么…（最多 500 字）"></textarea>' +
+        'placeholder="写点什么…（回车发送，Shift+回车换行，最多 500 字）"></textarea>' +
         '<button class="button button-primary" type="submit">发送</button>' +
         '</form>' +
         '<div id="message-error"></div>' +
@@ -360,6 +406,7 @@ window.messages = (function ($) {
     showThread: showThread,
     send: send,
     start: start,
+    remove: remove,
     tradeAction: tradeAction,
     refreshUnread: refreshUnread
   };

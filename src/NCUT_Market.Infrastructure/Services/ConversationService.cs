@@ -26,7 +26,8 @@ internal sealed class ConversationService(
     {
         var query = dbContext.Conversations
             .AsNoTracking()
-            .Where(x => x.BuyerId == userId || x.SellerId == userId);
+            .Where(x => (x.BuyerId == userId && x.BuyerDeletedAt == null)
+                || (x.SellerId == userId && x.SellerDeletedAt == null));
 
         var totalCount = await query.CountAsync(cancellationToken);
 
@@ -186,7 +187,11 @@ internal sealed class ConversationService(
                 SellerConfirmedAt = x.Product == null ? (DateTime?)null : x.Product.SellerConfirmedAt,
 
                 PeerId = x.BuyerId == userId ? x.SellerId : x.BuyerId,
-                PeerNickname = x.BuyerId == userId ? x.Seller.Nickname : x.Buyer.Nickname
+                PeerNickname = x.BuyerId == userId ? x.Seller.Nickname : x.Buyer.Nickname,
+
+                // The other side's read marker, which is what turns "have they seen this" into a
+                // receipt. A message of mine is read when its CreatedAt is at or before this.
+                PeerLastReadAt = x.BuyerId == userId ? x.SellerLastReadAt : x.BuyerLastReadAt
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -246,6 +251,7 @@ internal sealed class ConversationService(
             ToUrl(header.ProductThumbnailKey),
             header.PeerId,
             header.PeerNickname,
+            header.PeerLastReadAt,
             pagination.ToResult(messages, totalCount),
             trade));
     }
@@ -300,6 +306,13 @@ internal sealed class ConversationService(
         // This is what lifts the thread to the top of the recipient's list.
         conversation.LastMessageAt = now;
 
+        // And this is what puts it back into both lists if either side had cleared it away. Someone
+        // writing here means the thread is live again for both of them — see BuyerDeletedAt. Clearing
+        // only the recipient's would leave the sender looking at a thread that is missing from their
+        // own list the moment they navigate back to it.
+        conversation.BuyerDeletedAt = null;
+        conversation.SellerDeletedAt = null;
+
         dbContext.Messages.Add(message);
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -340,6 +353,57 @@ internal sealed class ConversationService(
         return OperationResult<bool>.Success(true);
     }
 
+    public async Task<OperationResult<bool>> DeleteAsync(
+        long id,
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        // Membership is part of the lookup, like everywhere else: somebody else's thread reads as one
+        // that does not exist.
+        var conversation = await dbContext.Conversations
+            .Include(x => x.Product)
+            .FirstOrDefaultAsync(
+                x => x.Id == id && (x.BuyerId == userId || x.SellerId == userId),
+                cancellationToken);
+
+        if (conversation is null)
+        {
+            return OperationResult<bool>.Failure(ErrorCodes.NotFound, "找不到这个会话。");
+        }
+
+        // 确认收货 / 确认收款的按钮只长在会话页里（见 messages.js 的 tradeHtml），所以藏掉一条正在
+        // 进行的交易，等于把还在等对方确认的那个人关在门外 —— 他没有别的地方可以点。
+        //
+        // 判定和 GetAsync 里"这笔交易是不是这条会话谈成的"用的是同一套两列比较。光看
+        // Status == InTransaction 会把同一个商品下没谈成的那位买家的会话也一起挡住，而那位的会话
+        // 里根本没有任何可以确认的东西。
+        //
+        // 交易走完之后随便藏：收货记录在「我买到的」里另有一份，不靠这条会话。
+        if (conversation.Product is { } product
+            && product.TransactionBuyerId == conversation.BuyerId
+            && product.Status == ProductStatus.InTransaction)
+        {
+            return OperationResult<bool>.Failure(
+                ErrorCodes.InvalidState,
+                "这笔交易还在进行中，完成之后再删除会话。");
+        }
+
+        var now = AppDbContext.AuditNow;
+
+        if (conversation.BuyerId == userId)
+        {
+            conversation.BuyerDeletedAt = now;
+        }
+        else
+        {
+            conversation.SellerDeletedAt = now;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return OperationResult<bool>.Success(true);
+    }
+
     /// <summary>
     /// The threads holding at least one message the caller has not read.
     /// </summary>
@@ -361,12 +425,19 @@ internal sealed class ConversationService(
     /// so the comparison is between two Beijing wall-clock values and never touches the server's own
     /// (UTC) clock.
     /// </para>
+    /// <para>
+    /// A thread the caller has cleared away is excluded, per side. Without that check a hidden thread
+    /// would keep the header badge lit for messages nobody can see, and opening the messages page
+    /// would not explain where the number came from.
+    /// </para>
     /// </remarks>
     private IQueryable<Conversation> UnreadConversations(long userId) =>
         dbContext.Conversations.Where(x =>
             (x.BuyerId == userId
+                && x.BuyerDeletedAt == null
                 && x.Messages.Any(m => m.SenderId != userId && m.CreatedAt > x.BuyerLastReadAt))
             || (x.SellerId == userId
+                && x.SellerDeletedAt == null
                 && x.Messages.Any(m => m.SenderId != userId && m.CreatedAt > x.SellerLastReadAt)));
 
     /// <summary>
@@ -375,7 +446,7 @@ internal sealed class ConversationService(
     /// <remarks>
     /// A method over <see cref="IQueryable{T}"/> rather than the static
     /// <c>Expression&lt;Func&lt;...&gt;&gt;</c> that <c>ProductService</c> uses, because this row
-    /// depends on who is asking — the peer and the unread flag both flip with <paramref name="userId"/>.
+    /// depends on who is asking — the peer and the unread count both flip with <paramref name="userId"/>.
     /// EF Core has no two-argument <c>Select</c>, so the caller's id is closed over here instead and
     /// the whole expression is still translated to SQL.
     /// </remarks>
@@ -395,10 +466,14 @@ internal sealed class ConversationService(
                 .Select(message => message.Content)
                 .FirstOrDefault(),
             x.LastMessageAt,
-            (x.BuyerId == userId
-                && x.Messages.Any(m => m.SenderId != userId && m.CreatedAt > x.BuyerLastReadAt))
-            || (x.SellerId == userId
-                && x.Messages.Any(m => m.SenderId != userId && m.CreatedAt > x.SellerLastReadAt))));
+
+            // The same "how far have I read" comparison UnreadConversations makes, counted instead of
+            // tested. Both of its arms carry the identical message predicate — only the marker they
+            // compare against differs — so this is one subquery with a CASE picking the marker, rather
+            // than two subqueries added together. The caller is always on one of the two sides, because
+            // the query above only ever hands over threads they are in.
+            x.Messages.Count(m => m.SenderId != userId
+                && m.CreatedAt > (x.BuyerId == userId ? x.BuyerLastReadAt : x.SellerLastReadAt))));
 
     /// <summary>
     /// Turns storage keys into URLs and trims the preview.

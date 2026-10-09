@@ -26,7 +26,7 @@ namespace NCUT_Market.Core.DTOs.Messages;
 /// <para>
 /// Facts, not conclusions. Whether a button should be shown depends on who is asking and on rules
 /// that the server enforces anyway, so this carries the columns and lets the frontend derive the
-/// answer — the same split <c>ConversationSummaryResponse.HasUnread</c> and <c>PeerId</c> already use.
+/// answer — the same split <c>ConversationSummaryResponse.UnreadCount</c> and <c>PeerId</c> already use.
 /// A field called <c>CanConfirmReceipt</c> would be a second copy of the rule, free to disagree with
 /// the server's.
 /// </para>

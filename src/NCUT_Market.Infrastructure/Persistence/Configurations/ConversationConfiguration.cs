@@ -16,6 +16,8 @@ internal sealed class ConversationConfiguration : IEntityTypeConfiguration<Conve
         builder.Property(x => x.LastMessageAt).HasColumnType("datetime(3)");
         builder.Property(x => x.BuyerLastReadAt).HasColumnType("datetime(3)");
         builder.Property(x => x.SellerLastReadAt).HasColumnType("datetime(3)");
+        builder.Property(x => x.BuyerDeletedAt).HasColumnType("datetime(3)");
+        builder.Property(x => x.SellerDeletedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.TransactionProposedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.CreatedAt).HasColumnType("datetime(3)");
         builder.Property(x => x.UpdatedAt).HasColumnType("datetime(3)");

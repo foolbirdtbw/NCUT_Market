@@ -51,20 +51,60 @@ window.notifications = (function ($) {
   var GLYPHS = ["", "🗑️", "✅", "⏸️", "🤝", "🔔", "↩️"];
 
   function rowHtml(item) {
-    /* 关联商品的链接只在商品还在时给。商品被硬删除后 relatedProductId 仍是原值，
-     * 跳过去只会 404——点击即标记已读，所以这里用 div 而不是 a。 */
+    /* 点击即标记已读，所以整行是 div 而不是 a——商品链接挪到了组头上，那里才是它的位置。 */
     return '<div class="notice-item' + (item.isRead ? "" : " is-unread") +
       '" data-action="open-notification" data-notification-id="' + item.id + '">' +
       '<span class="notice-glyph">' + (GLYPHS[item.type] || "🔔") + '</span>' +
       '<span class="notice-main">' +
       '<span class="notice-title">' + NM.esc(item.title) + '</span>' +
       '<span class="notice-content">' + NM.esc(item.content) + '</span>' +
-      '<span class="notice-meta">' + NM.formatDateTime(item.createdAt) +
-      (item.relatedProductId
-        ? ' · <a href="#/products/' + item.relatedProductId + '">查看商品</a>'
-        : '') +
+      '<span class="notice-meta">' + NM.formatDateTime(item.createdAt) + '</span>' +
       '</span>' +
-      '</span>' +
+      '</div>';
+  }
+
+  /* 同一个商品的通知归成一组。
+   *
+   * 分组放在这里而不是服务端：服务端列表仍是扁平的、按时间倒序、按条分页，一个字没改。
+   * 代价是一个商品的通知有可能被页边界切开，出现相邻两组同名商品——一页 20 条、一笔交易
+   * 最多 6 条，实际很少见；换来的是不用在 SQL 里分组，也不用为分组另算一遍总数。
+   *
+   * relatedProductId 为 null 表示商品已经被硬删除（外键 SET NULL），那种通知各自成组。 */
+  function groupItems(items) {
+    var order = [];
+    var groups = {};
+
+    items.forEach(function (item) {
+      var key = item.relatedProductId || ("n" + item.id);
+
+      if (!groups[key]) {
+        groups[key] = { productId: item.relatedProductId, title: item.productTitle, items: [] };
+        order.push(key);
+      }
+
+      groups[key].items.push(item);
+    });
+
+    return order.map(function (key) { return groups[key]; });
+  }
+
+  function groupHtml(group) {
+    /* 组头。商品还在就是能点进去的名字；不在了就说明白，而不是给一个跳过去 404 的链接。
+     * 删除按钮在组头上，组内每条照旧点开即已读——两种动作各占一层，不会互相吃掉点击。 */
+    var head = group.productId
+      ? '<a href="#/products/' + group.productId + '">' + NM.esc(group.title) + '</a>'
+      : '<span class="muted">已删除的商品</span>';
+
+    /* 商品没了就没有产品 id 可以按组删，退化成删这一条——那一组本来也只有一条。 */
+    var scope = group.productId
+      ? ' data-product-id="' + group.productId + '"'
+      : ' data-notification-id="' + group.items[0].id + '"';
+
+    return '<div class="notice-group">' +
+      '<div class="notice-group-head">' + head +
+      '<button class="button button-danger" data-action="delete-notice"' + scope + '>删除</button>' +
+      '</div>' +
+      group.items.map(rowHtml).join("") +
       '</div>';
   }
 
@@ -93,7 +133,7 @@ window.notifications = (function ($) {
       }
 
       $("#notice-list").html(
-        '<div class="notice-list">' + page.items.map(rowHtml).join("") + '</div>' +
+        '<div class="notice-list">' + groupItems(page.items).map(groupHtml).join("") + '</div>' +
         NM.pagerHtml(page, function (target) { return "#/notifications?page=" + target; }));
     }, function (error) {
       $("#notice-list").html(NM.errorCard(error));
@@ -101,9 +141,12 @@ window.notifications = (function ($) {
   }
 
   /* 点开一条 = 标记已读。不回写 DOM，只把徽标和那一条的样式改掉。
-   * 整页重拉会把用户正在看的位置弹走，这里没必要付那个代价。 */
+   * 整页重拉会把用户正在看的位置弹走，这里没必要付那个代价。
+   *
+   * 选择器钉住 .notice-item：商品已经没了的那一组，组头的删除按钮上也带着同一个
+   * data-notification-id，不钉的话这一句会同时选中按钮。 */
   function open(id) {
-    var row = $("[data-notification-id='" + id + "']");
+    var row = $(".notice-item[data-notification-id='" + id + "']");
 
     if (!row.hasClass("is-unread")) {
       return;
@@ -117,9 +160,35 @@ window.notifications = (function ($) {
     });
   }
 
+  /* 组头那个删除按钮。两个参数里只会来一个：按商品（整组）或按单条（商品已经没了的那组）。
+   * 真删，不能恢复，所以确认框的措辞得把这一点说出来。
+   *
+   * 删完重新路由当前页，而不是就地摘 DOM：删掉整组会让这一页少好几行，页码和总数都跟着错位，
+   * 重拉一次是唯一能和服务端对齐的做法——和私信那边发完消息重拉详情同一个理由。
+   *
+   * route() 在 app.js 的闭包里拿不到，所以手工触发一次 hashchange 让它自己走：hash 没变，
+   * 挂着的那次不会自己来。 */
+  function remove(productId, notificationId) {
+    if (!confirm("删除之后这些通知就没了，不能恢复。确定删除吗？")) {
+      return;
+    }
+
+    var call = productId
+      ? api.del("/api/notifications/product/" + productId)
+      : api.del("/api/notifications/" + notificationId);
+
+    call.then(function () {
+      $(window).trigger("hashchange");
+      refreshUnread();
+    }, function (error) {
+      $("#notice-list").html(NM.errorCard(error));
+    });
+  }
+
   return {
     showList: showList,
     open: open,
+    remove: remove,
     refreshUnread: refreshUnread
   };
 })(jQuery);

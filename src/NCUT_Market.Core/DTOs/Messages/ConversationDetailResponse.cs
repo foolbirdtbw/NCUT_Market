@@ -11,6 +11,12 @@ namespace NCUT_Market.Core.DTOs.Messages;
 /// <param name="ProductThumbnailUrl">Null when the listing had no photo or the file is gone.</param>
 /// <param name="PeerId">The other party.</param>
 /// <param name="PeerNickname">Display name of the other party.</param>
+/// <param name="PeerLastReadAt">
+/// How far the other party has read, as Beijing time. A message of the caller's own is read when its
+/// <c>CreatedAt</c> is at or before this — both stamps come from this server, so comparing them is
+/// safe. It only moves when they open the thread and nothing polls, so a sender sees the receipt on
+/// their next visit rather than live.
+/// </param>
 /// <param name="Messages">
 /// The <em>most recent</em> page of the thread, in chronological order — oldest first within the
 /// page, so the frontend can append to the bottom without reversing anything.
@@ -39,5 +45,6 @@ public sealed record ConversationDetailResponse(
     string? ProductThumbnailUrl,
     long PeerId,
     string PeerNickname,
+    DateTime PeerLastReadAt,
     PagedResult<MessageResponse> Messages,
     ConversationTradeResponse? Trade);

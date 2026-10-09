@@ -22,6 +22,15 @@ window.NM = (function () {
     return value ? String(value).replace("T", " ").slice(0, 16) : "—";
   }
 
+  /* 比两个接口时间戳的先后。这里可以用 Date，formatDateTime 却不行：两个字符串都不带时区，
+   * 浏览器会把它们按同一个本地时区解释——两边同样地被偏移了一次，先后关系不变。显示就不同了，
+   * 那一次偏移会直接变成错的时间。
+   *
+   * 只用来问「我发的这条，对方读到没有」（消息的 createdAt 和对方的已读戳）。 */
+  function atOrBefore(left, right) {
+    return new Date(left) <= new Date(right);
+  }
+
   function formatPrice(value) {
     var amount = Number(value);
 
@@ -161,6 +170,7 @@ window.NM = (function () {
   return {
     esc: esc,
     formatDateTime: formatDateTime,
+    atOrBefore: atOrBefore,
     formatPrice: formatPrice,
     loading: loading,
     empty: empty,

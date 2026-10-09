@@ -21,7 +21,12 @@ namespace NCUT_Market.Core.DTOs.Messages;
 /// <param name="LastMessagePreview">The most recent message, truncated for a list row. Null when
 /// nobody has written yet, which is the state right after "联系卖家" is clicked.</param>
 /// <param name="LastMessageAt">Beijing time. Drives the row's timestamp and the list's ordering.</param>
-/// <param name="HasUnread">Whether the other side has written since the caller last read this thread.</param>
+/// <param name="UnreadCount">
+/// How many messages the other side has sent since the caller last read this thread. A count rather
+/// than a flag because the row has room for one and "3 waiting" reads better than a dot. The header
+/// badge counts <em>threads</em> — see <see cref="UnreadCountResponse"/> — and the two are deliberately
+/// different numbers.
+/// </param>
 public sealed record ConversationSummaryResponse(
     long Id,
     long? ProductId,
@@ -31,4 +36,4 @@ public sealed record ConversationSummaryResponse(
     string PeerNickname,
     string? LastMessagePreview,
     DateTime LastMessageAt,
-    bool HasUnread);
+    int UnreadCount);

@@ -73,6 +73,24 @@ public sealed class Conversation : IHasCreatedAt, IHasUpdatedAt
     public DateTime SellerLastReadAt { get; set; }
 
     /// <summary>
+    /// When the buyer cleared this thread out of their own list, or null while it is still there.
+    /// </summary>
+    /// <remarks>
+    /// Per side, like the two read markers above, because a thread is one row shared by two people:
+    /// hiding it is a decision about my list, not the other party's. Nothing is deleted — the row, its
+    /// messages and its trade panel are all still there for whoever did not hide it.
+    /// <para>
+    /// Every write that adds a message clears both sides' markers, so a new message brings the thread
+    /// back for both of them. You cannot unilaterally mute somebody, and it means a wrong click cannot
+    /// lose a message for good.
+    /// </para>
+    /// </remarks>
+    public DateTime? BuyerDeletedAt { get; set; }
+
+    /// <summary>When the seller cleared this thread out of their own list. See <see cref="BuyerDeletedAt"/>.</summary>
+    public DateTime? SellerDeletedAt { get; set; }
+
+    /// <summary>
     /// Who proposed a trade in this thread, or null when nobody has.
     /// </summary>
     /// <remarks>

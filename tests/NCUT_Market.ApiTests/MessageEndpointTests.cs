@@ -213,4 +213,168 @@ public sealed class MessageEndpointTests(ApiFixture fixture) : IClassFixture<Api
             HttpStatusCode.Unauthorized,
             (await anonymous.GetAsync("/api/conversations/unread-count")).StatusCode);
     }
+
+    [Fact]
+    public async Task Hiding_a_thread_takes_it_off_my_list_and_leaves_the_others()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "私信-单方隐藏");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        await buyer.SendMessageAsync(thread.Id, "在吗？");
+        Assert.Equal(1, await seller.UnreadCountAsync());
+
+        Assert.Equal(HttpStatusCode.NoContent, (await buyer.DeleteConversationAsync(thread.Id)).StatusCode);
+
+        // Gone for the buyer only. The seller's half of the same row is untouched, and so is the
+        // seller's badge — the buyer's own message is still sitting there unread.
+        Assert.DoesNotContain(await buyer.ListConversationsAsync(), x => x.Id == thread.Id);
+        Assert.Contains(await seller.ListConversationsAsync(), x => x.Id == thread.Id);
+        Assert.Equal(1, await seller.UnreadCountAsync());
+
+        // A hidden thread must not keep the hider's own badge lit either.
+        Assert.Equal(0, await buyer.UnreadCountAsync());
+    }
+
+    [Fact]
+    public async Task A_new_message_brings_a_hidden_thread_back()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "私信-隐藏后复活");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        await buyer.SendMessageAsync(thread.Id, "在吗？");
+        (await buyer.DeleteConversationAsync(thread.Id)).EnsureSuccessStatusCode();
+        Assert.DoesNotContain(await buyer.ListConversationsAsync(), x => x.Id == thread.Id);
+
+        await seller.SendMessageAsync(thread.Id, "在的");
+
+        // Hiding is reversible by design: nobody can unilaterally mute the other side, and a wrong
+        // click cannot lose a message for good.
+        Assert.Contains(await buyer.ListConversationsAsync(), x => x.Id == thread.Id);
+    }
+
+    [Fact]
+    public async Task A_thread_with_a_live_trade_cannot_be_hidden()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+        var (loser, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "私信-交易中不可删");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+        var otherThread = await loser.StartConversationAsync(listing.Id);
+
+        (await buyer.ProposeTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+        (await seller.AcceptTradeAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        // 确认收货 / 确认收款 exist nowhere but the thread, so hiding it would strand whoever has not
+        // confirmed yet. Both sides are blocked, not just the one who owes an action.
+        var blocked = await buyer.DeleteConversationAsync(thread.Id);
+        Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+        Assert.Equal(ErrorCodes.InvalidState, await blocked.ReadCodeAsync());
+
+        Assert.Equal(HttpStatusCode.Conflict, (await seller.DeleteConversationAsync(thread.Id)).StatusCode);
+
+        // The guard is "this thread is the one that won the listing", not "the listing is in a trade".
+        // The other buyer's thread is about the same listing and has nothing to confirm in it.
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await loser.DeleteConversationAsync(otherThread.Id)).StatusCode);
+
+        // Once both sides confirm the listing is Sold and the confirm buttons are gone for good, so
+        // hiding is allowed again.
+        (await buyer.ConfirmReceiptAsync(thread.Id)).EnsureSuccessStatusCode();
+        (await seller.ConfirmPaymentAsync(thread.Id)).EnsureSuccessStatusCode();
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await buyer.DeleteConversationAsync(thread.Id)).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_stranger_cannot_hide_a_thread()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+        var (stranger, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "私信-外人删");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        var response = await stranger.DeleteConversationAsync(thread.Id);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(ErrorCodes.NotFound, await response.ReadCodeAsync());
+
+        // And nothing happened to either participant's list.
+        Assert.Contains(await buyer.ListConversationsAsync(), x => x.Id == thread.Id);
+        Assert.Contains(await seller.ListConversationsAsync(), x => x.Id == thread.Id);
+    }
+
+    [Fact]
+    public async Task Hiding_a_thread_that_does_not_exist_is_a_404()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await seller.DeleteConversationAsync(long.MaxValue)).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_read_marker_moves_when_the_other_side_opens_the_thread()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "私信-已读回执");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        var sent = await buyer.SendMessageAsync(thread.Id, "这条读了吗？");
+
+        // The buyer sees the seller's marker, and the seller has not read the thread since the message
+        // landed — so there is no receipt yet.
+        var before = await buyer.GetConversationAsync(thread.Id);
+        Assert.True(before.PeerLastReadAt < sent.CreatedAt);
+
+        // Reading the thread is what moves it, and reading it is the POST — a plain GET leaves the
+        // marker alone, which is why the client has to make the second call.
+        await seller.GetConversationAsync(thread.Id);
+        Assert.True((await buyer.GetConversationAsync(thread.Id)).PeerLastReadAt < sent.CreatedAt);
+
+        await seller.PostAsync($"/api/conversations/{thread.Id}/read", null);
+
+        var after = await buyer.GetConversationAsync(thread.Id);
+        Assert.True(after.PeerLastReadAt >= sent.CreatedAt);
+    }
+
+    [Fact]
+    public async Task An_unread_thread_reports_how_many_messages_are_waiting()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var (buyer, _) = await fixture.CreateSignedInClientAsync();
+
+        var listing = await seller.PublishListingAsync(fixture, "私信-未读条数");
+        var thread = await buyer.StartConversationAsync(listing.Id);
+
+        await buyer.SendMessageAsync(thread.Id, "一");
+        await seller.PostAsync($"/api/conversations/{thread.Id}/read", null);
+
+        await buyer.SendMessageAsync(thread.Id, "二");
+        await buyer.SendMessageAsync(thread.Id, "三");
+        await buyer.SendMessageAsync(thread.Id, "四");
+
+        var row = Assert.Single(await seller.ListConversationsAsync(), x => x.Id == thread.Id);
+
+        // A count, not a flag — and the three newest are the ones since the seller's marker.
+        Assert.Equal(3, row.UnreadCount);
+
+        // The buyer's own three messages are not unread for the buyer.
+        Assert.Equal(0, Assert.Single(await buyer.ListConversationsAsync(), x => x.Id == thread.Id).UnreadCount);
+    }
 }

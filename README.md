@@ -179,6 +179,11 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 交易**不是一张表**，是 `products` 上的几列加 `conversations` 上的几列。
 
 1. **开会话** — `POST /api/conversations`，带商品 id。按唯一索引 `(product_id, buyer_id)` find-or-create，重复点「联系卖家」拿到的是同一个会话（两次都是 200）。会话创建时把商品标题和缩略图**冻**在里面——之后商品被删了，会话里那串标题还在。不能联系自己。
+
+   打开会话页即**已读**（`POST /api/conversations/{id}/read` 只盖自己那一侧的时间戳），发信人下次进来能在自己发出去的气泡上看到「已读」——比的是消息的 `created_at` 和对方的那个戳，两个都由服务端盖。没有轮询，所以不是实时的。
+
+   会话可以**单方面从自己的列表里删掉**（`DELETE /api/conversations/{id}`）：删的是我这一侧，对方那边原封不动；任何一方再写一句话，两边一起恢复。唯一删不掉的是**交易进行中**的会话（回 409），因为确认收货/确认收款的按钮只存在于会话页里。
+
 2. **发起交易** — `POST /api/conversations/{id}/transaction`。要求商品是 `Published`，且这个会话没有待接受的提议。写 `conversations.transaction_proposed_by_id` / `transaction_proposed_at`。**此时商品还在售**。
 3. **接受** — `POST .../transaction/accept`，由**对方**点（发起人自己接受是 409）。写 `products.transaction_buyer_id = 会话的 buyer_id`、`transaction_accepted_at`，状态转 `InTransaction`，并**清掉同一个商品上其它会话的提议**（后来的把先前的挤掉）。
 4. **拒绝 / 撤回** — `POST .../transaction/cancel`，**两边谁点都行**：不是发起方点叫拒绝，就是发起方点叫撤回。两者是同一个转换——清掉这两列、给对方写一条通知，标题按点击者是谁分两句（「交易提议被拒绝」/「交易提议已撤回」）。**只清这一条会话**，同一商品上别的会话的提议不受影响（和「接受」不同）。商品自始至终没动过，所以拒绝之后可以立刻重新发起，没有冷却期。既没有 403 也没有过期检查：`accept` 会占住商品，`cancel` 不会。
@@ -234,7 +239,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `dormitory_areas` | 宿舍区字典 | `uk_dormitory_areas_name` |
 | `products` | 商品 + **整笔交易的状态** | `price decimal(10,2)` 且有 `>= 0` 检查约束；`version` 是乐观锁并发令牌；四个外键全是 RESTRICT |
 | `product_images` | 每个尺寸一列 key | `product_id` **CASCADE**——图跟着商品一起没 |
-| `conversations` | 私信会话 + 冻结的商品标题/缩略图 + 待接受的提议 | `uk_conversations_product_id_buyer_id`（一个买家对一件商品只有一个会话） |
+| `conversations` | 私信会话 + 冻结的商品标题/缩略图 + 待接受的提议 + **每侧的已读戳和隐藏标记** | `uk_conversations_product_id_buyer_id`（一个买家对一件商品只有一个会话） |
 | `messages` | 消息正文 | `conversation_id` **CASCADE**；索引 `(conversation_id, id)` 专供倒序翻页 |
 | `notifications` | 站内通知，标题正文**提前渲染好** | `related_product_id` **SET NULL**——商品硬删了通知还在，因为文本已经写死在行里 |
 | `announcements` | 公告 | — |
@@ -245,18 +250,18 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 - **软删没有全局过滤器。**`products.deleted_at` 是业务字段，靠每个查询自己显式过滤，没有 `HasQueryFilter`。
 - **交易记录就是 `products` 上的四列**（`transaction_buyer_id`、`transaction_accepted_at`、`buyer_confirmed_at`、`seller_confirmed_at`），没确认的提议则是 `conversations` 上的两列。没有单独的 `transactions` 表——这是「软删而不是硬删」那条规则的全部理由。
 - **`last_activity_at` / `last_message_at` 不是审计列**，是业务字段，只由各自的 service 手工推进。审计那套自动盖章不碰它们（否则「这个商品被真的改过」会被每次保存刷新，留给草稿清理的那个时钟就永远走不动）。
-- 迁移是**手工执行**的（`dotnet ef database update`），启动时不建表、不改表。八个迁移按顺序：`InitialCreate` → `AddUserRoleAndMessaging` → `AddProductTransaction` → `DropImageOriginalKey` → `AddPasswordResetCode` → `AddUserLastSeenAt` → `AddUserStudentId` → `AddProductDeletedAt`。
+- 迁移是**手工执行**的（`dotnet ef database update`），启动时不建表、不改表。九个迁移按顺序：`InitialCreate` → `AddUserRoleAndMessaging` → `AddProductTransaction` → `DropImageOriginalKey` → `AddPasswordResetCode` → `AddUserLastSeenAt` → `AddUserStudentId` → `AddProductDeletedAt` → `AddConversationHide`。
 
 ## HTTP 接口
 
-44 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
+48 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
 
 | 资源 | 端点 |
 |---|---|
 | `api/auth` | `POST register`、`POST login`、`POST reset-password` 匿名；`GET me` 需登录 |
 | `api/products` | `GET`（匿名，带筛选排序）、`GET {id}`（匿名，草稿只有卖家看得见）、`GET mine`、`GET bought`；`POST`、`PUT {id}`、`POST {id}/publish`、`POST {id}/offline`、`POST {id}/sold`、`DELETE {id}`、`POST {id}/images`、`DELETE {id}/images/{imageId}` 需登录且校验归属 |
-| `api/conversations` | `GET`、`GET unread-count`、`POST`、`GET {id}`、`POST {id}/messages`、`POST {id}/read`、`POST {id}/transaction`、`.../transaction/accept`、`.../cancel`、`.../receipt`、`.../payment`——全需登录，且**非参与方 404** |
-| `api/notifications` | `GET`、`GET unread-count`、`POST {id}/read` |
+| `api/conversations` | `GET`、`GET unread-count`、`POST`、`GET {id}`、`POST {id}/messages`、`POST {id}/read`、`DELETE {id}`、`POST {id}/transaction`、`.../transaction/accept`、`.../cancel`、`.../receipt`、`.../payment`——全需登录，且**非参与方 404**。`DELETE` 只删调用者这一侧，交易进行中回 409 |
+| `api/notifications` | `GET`、`GET unread-count`、`POST {id}/read`、`DELETE {id}`、`DELETE product/{productId}`——后一个是**整组删**（一个商品的通知），幂等：匹配不到也算成功 |
 | `api/categories` | `GET` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/dormitory-areas` | `GET`、`GET {id}` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/announcements` | `GET` 匿名；`POST` / `DELETE {id}` 管理员 |

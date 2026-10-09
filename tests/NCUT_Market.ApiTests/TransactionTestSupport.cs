@@ -116,4 +116,24 @@ internal static class TransactionTestSupport
     /// <summary>Every notification type the caller has received, newest first.</summary>
     public static async Task<NotificationType[]> NotificationTypesAsync(this HttpClient client) =>
         [.. (await client.ListNotificationsAsync()).Select(x => x.Type)];
+
+    /// <summary>Drops one of the caller's own notifications.</summary>
+    /// <remarks>
+    /// Raw like the trade helpers: 204 and 404 are both expected outcomes depending on whose row the
+    /// id names, and the caller is asserting on which.
+    /// </remarks>
+    public static Task<HttpResponseMessage> DeleteNotificationAsync(
+        this HttpClient client,
+        long notificationId) =>
+        client.DeleteAsync($"/api/notifications/{notificationId}");
+
+    /// <summary>Drops every notification the caller holds about one listing.</summary>
+    /// <remarks>
+    /// Idempotent, so this one really does have a single outcome — 204 — and is asserted through
+    /// <c>EnsureSuccessStatusCode</c> by callers rather than by status.
+    /// </remarks>
+    public static Task<HttpResponseMessage> DeleteNotificationGroupAsync(
+        this HttpClient client,
+        long productId) =>
+        client.DeleteAsync($"/api/notifications/product/{productId}");
 }

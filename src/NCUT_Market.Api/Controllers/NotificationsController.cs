@@ -86,4 +86,55 @@ public sealed class NotificationsController(INotificationService notificationSer
             ? NoContent()
             : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
     }
+
+    /// <summary>Drops one notification.</summary>
+    /// <param name="id">Notification id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Gone.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="404">No such notification, or it belongs to somebody else.</response>
+    /// <remarks>
+    /// The whole row goes, and there is no undo — which is why the confirm dialog is on the client.
+    /// Unlike deleting a thread, nothing is shared here: a notification has exactly one reader.
+    /// </remarks>
+    [HttpDelete("{id:long}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken)
+    {
+        var result = await notificationService.DeleteAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
+    /// <summary>Drops every notification you hold about one listing.</summary>
+    /// <param name="productId">Listing id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Gone, or there was nothing to drop.</response>
+    /// <response code="401">No token.</response>
+    /// <remarks>
+    /// The one delete here that can match nothing and still succeed. The rows are already scoped to the
+    /// caller, so an empty match means an empty group rather than a wrong id, and a client clicking
+    /// twice should not be told off for it. The listing is never checked for existence either: its
+    /// notices are the caller's rows regardless of what has since happened to it.
+    /// <para>
+    /// The plain <c>{id:long}</c> route above does not shadow this one — <c>product</c> is not a number,
+    /// so its constraint rules it out, and a literal segment wins outright.
+    /// </para>
+    /// </remarks>
+    [HttpDelete("product/{productId:long}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DeleteByProduct(long productId, CancellationToken cancellationToken)
+    {
+        var result = await notificationService.DeleteByProductAsync(
+            productId, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
 }

@@ -33,6 +33,12 @@ internal sealed class NotificationService(AppDbContext dbContext) : INotificatio
                 x.Title,
                 x.Content,
                 x.RelatedProductId,
+
+                // Read live rather than frozen, unlike Title and Content. It is not part of what the
+                // notification says, it is what the client groups by, so there is nothing to keep
+                // readable after the listing goes — and after it goes the FK is null and this is null
+                // with it, which is exactly what tells the client this notice stands on its own.
+                x.RelatedProduct == null ? null : x.RelatedProduct.Title,
                 x.IsRead,
                 x.CreatedAt,
                 x.ReadAt))
@@ -75,6 +81,45 @@ internal sealed class NotificationService(AppDbContext dbContext) : INotificatio
 
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+
+        return OperationResult<bool>.Success(true);
+    }
+
+    public async Task<OperationResult<bool>> DeleteAsync(
+        long id,
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        // Recipientship is part of the lookup, so somebody else's notification is indistinguishable
+        // from one that does not exist.
+        var notification = await dbContext.Notifications
+            .FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+
+        if (notification is null)
+        {
+            return OperationResult<bool>.Failure(ErrorCodes.NotFound, "找不到这条通知。");
+        }
+
+        // A real delete, unlike hiding a conversation: this row has exactly one reader and nothing
+        // else points at it — the product's FK already tolerates the row vanishing. There is no other
+        // side of it to preserve.
+        dbContext.Notifications.Remove(notification);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return OperationResult<bool>.Success(true);
+    }
+
+    public async Task<OperationResult<bool>> DeleteByProductAsync(
+        long productId,
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await dbContext.Notifications
+            .Where(x => x.UserId == userId && x.RelatedProductId == productId)
+            .ToListAsync(cancellationToken);
+
+        dbContext.Notifications.RemoveRange(rows);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return OperationResult<bool>.Success(true);
     }

@@ -99,4 +99,35 @@ public interface IConversationService
         long id,
         long userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears a thread out of the caller's own list. The other party keeps theirs.
+    /// </summary>
+    /// <param name="id">Primary key.</param>
+    /// <param name="userId">The signed-in user, who must be a participant.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <returns>
+    /// Fails with <see cref="ErrorCodes.InvalidState"/> while a trade on this thread is still running.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Not a delete. The row, its messages and its trade panel all stay; what changes is one column
+    /// saying that this side no longer wants it in their list. A thread is one row shared by two
+    /// people, so removing it for one of them cannot be allowed to remove it for the other.
+    /// </para>
+    /// <para>
+    /// Reversible in one direction only, on purpose: the next message either party writes clears both
+    /// sides' markers, so the thread reappears for both. See <c>Conversation.BuyerDeletedAt</c>.
+    /// </para>
+    /// <para>
+    /// A running trade is refused because the confirm-receipt and confirm-payment buttons exist nowhere
+    /// but the thread, so hiding it would leave whoever still owes a confirmation with no way to give
+    /// it. Nothing blocks a <em>proposal</em>: the sweep drops one within a day, and any message
+    /// revives the thread anyway.
+    /// </para>
+    /// </remarks>
+    Task<OperationResult<bool>> DeleteAsync(
+        long id,
+        long userId,
+        CancellationToken cancellationToken = default);
 }

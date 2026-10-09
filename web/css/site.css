@@ -859,18 +859,32 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
 .conv-list { display: flex; flex-direction: column; }
 
+/* 一行 = 链接 + 删除按钮。点线画在这一层而不是 .conv-item 上，否则按钮旁边会缺一截线；
+   hover 也必须画在这一层，不然深色下浮起来那层薄白会到按钮跟前就截断。 */
+.conv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 深色下是 16px，hover 的浅白才跟着圆；浅色这个令牌是 0，和从前逐像素一样。 */
+  border-radius: var(--radius-ctl);
+  /* 点线分隔，不用实线——列表行的年代感就靠这个。 */
+  border-bottom: 1px dotted var(--border);
+}
+
+.conv-row:last-child { border-bottom: none; }
+
 .conv-item {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
+  /* 不加这一条的话，长预览会把这个链接撑宽，把旁边的删除按钮顶出可视区。 */
+  min-width: 0;
   padding: 6px 0;
-  /* 点线分隔，不用实线——列表行的年代感就靠这个。 */
-  border-bottom: 1px dotted var(--border);
   color: var(--text);
 }
 
 .conv-item:hover { color: var(--text); }
-.conv-item:last-child { border-bottom: none; }
 
 .conv-avatar {
   flex: none;
@@ -892,18 +906,24 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .conv-preview, .conv-product { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-meta { flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
 
-/* 未读只用一个方块标在标题后面，不整行变色——一列里两种强调同时出现，
-   反而看不出哪个才是重点。 */
-.conv-item.is-unread .conv-title::after {
-  content: "";
+/* 未读条数。和顶栏那个徽标是两个口径：徽标数的是「几个会话在等我」，这里数的是
+   「几句话没看」——所以颜色一样、形状不一样，靠在一起也不会被读成同一个数。 */
+.conv-unread {
   display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-left: 6px;
+  min-width: 18px;
+  margin-right: 6px;
+  padding: 0 5px;
   background: var(--mark);
-  vertical-align: middle;
+  color: var(--surface);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  /* 浅色这个令牌是 0（方块，和顶栏徽标一致），深色才是药丸。 */
+  border-radius: var(--radius-pill);
 }
 
+/* 有未读的行把预览也加深一档。整行不变色——一列里两种强调同时出现，
+   反而看不出哪个才是重点。 */
 .conv-item.is-unread .conv-preview { color: var(--text); }
 
 /* ---------- 私信：会话详情 ---------- */
@@ -934,6 +954,11 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .bubble-text { white-space: pre-wrap; word-break: break-word; }
 .bubble-meta { margin-top: 2px; color: var(--muted); font-size: 12px; }
 
+/* 气泡里那个「已读」。时间戳是背景信息，这个是状态，所以从那一行灰字里挑出来：
+   粗体 + 强调色。浅色是蓝（和自己那条气泡的边框同色），深色是香槟金。
+   未读的那一条什么都不显示，所以这个标记一出现就是「对方读过了」。 */
+.bubble-read { color: var(--accent); font-weight: 700; }
+
 .thread-form { display: flex; gap: 6px; margin-top: 12px; align-items: flex-start; }
 .thread-form textarea { flex: 1; resize: vertical; }
 .thread-more { margin: 6px 0 0; font-size: 12px; }
@@ -956,6 +981,23 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 /* ---------- 通知页 ---------- */
 
 .notice-list { display: flex; flex-direction: column; }
+
+/* 一个商品一组。分组是前端做的（见 notifications.js 的 groupItems），所以这里只管画框：
+   组与组之间空一行，组内沿用原来那条点线。 */
+.notice-group { margin-bottom: 14px; }
+.notice-group:last-child { margin-bottom: 0; }
+
+/* 组头 = 商品名 + 删除按钮。名字在左，按钮自动靠右，行宽变化时不用管。 */
+.notice-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+}
+
+.notice-group-head .button { margin-left: auto; }
 
 .notice-item {
   display: flex;
@@ -1163,8 +1205,10 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
    类）。放前面的话，主按钮按下去只会重复一遍 hover 的位移，动的那一下反而没了。 */
 :root[data-theme="dark"] .button:active:not(:disabled) { transform: scale(.97); }
 
-/* 列表行 hover 用一层薄白浮起来，而不是变底色块——下面本来就是玻璃。 */
-:root[data-theme="dark"] .conv-item:hover,
+/* 列表行 hover 用一层薄白浮起来，而不是变底色块——下面本来就是玻璃。
+   conv 那次挂在 .conv-item 上会只亮到删除按钮跟前，所以换成整行那一层；通知那边
+   没有行外的按钮，挂 .notice-item 就够。 */
+:root[data-theme="dark"] .conv-row:hover,
 :root[data-theme="dark"] .notice-item:hover,
 :root[data-theme="dark"] .announcement-item:hover { background: rgba(255, 255, 255, .06); }
 

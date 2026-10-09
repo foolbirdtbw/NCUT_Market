@@ -79,4 +79,15 @@ internal static class MessageTestSupport
         return await response.Content.ReadFromJsonAsync<MessageResponse>()
             ?? throw new InvalidOperationException("Sending a message returned no body.");
     }
+
+    /// <summary>Clears a thread out of the caller's own list.</summary>
+    /// <remarks>
+    /// The one helper here that hands back the raw response, because it has three legitimate
+    /// outcomes — 204, 404 for a thread you are not in, and 409 for one with a live trade — and
+    /// which one came back is normally the thing the caller is testing.
+    /// </remarks>
+    public static Task<HttpResponseMessage> DeleteConversationAsync(
+        this HttpClient client,
+        long conversationId) =>
+        client.DeleteAsync($"/api/conversations/{conversationId}");
 }

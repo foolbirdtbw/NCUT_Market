@@ -174,6 +174,32 @@ public sealed class ConversationsController(
             : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
     }
 
+    /// <summary>Clears a thread out of your own list. The other party keeps theirs.</summary>
+    /// <param name="id">Thread id.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">Hidden.</response>
+    /// <response code="401">No token.</response>
+    /// <response code="404">No such thread, or the caller is not in it.</response>
+    /// <response code="409">A trade on this thread is still running — confirm it first.</response>
+    /// <remarks>
+    /// Not a delete: the row stays, because the other half of it is somebody else's list. The next
+    /// message either party writes clears both sides' markers and puts the thread back, so this is
+    /// closer to clearing a notification than to destroying anything.
+    /// </remarks>
+    [HttpDelete("{id:long}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken)
+    {
+        var result = await conversationService.DeleteAsync(id, User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
     /// <summary>Offers to buy, from inside a thread. The listing stays on sale.</summary>
     /// <param name="id">Thread id.</param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
