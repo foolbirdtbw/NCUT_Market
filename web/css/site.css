@@ -300,6 +300,12 @@ main.wrap { flex: 1 0 auto; padding-top: 12px; padding-bottom: 20px; }
   /* 深色下这里是全站唯一「真有东西从底下经过」的玻璃——内容滚到它下面时才看得见
      模糊和饱和度增强。所以它值得一个 backdrop-filter，面板们反而未必（见 .card）。 */
   backdrop-filter: var(--glass);
+  /* 贴顶 + 毛玻璃这个组合，换页时容易留下一块没重画的玻璃：换页会改文档高度，滚动条随之
+     出现或消失，布局视口宽度变一次，而合成器偶尔拿上一帧的快照去画这一层。那一块不会自己
+     消失，要滚一下或者拉窗口才刷新——看起来就是顶栏里凭空多出一块错位的蓝色矩形。
+     声明 will-change 是让浏览器把顶栏固定成自己的一层，别跟着页面一起重画。
+     一行，没有视觉代价；`transform: translateZ(0)` 是等价的写法。 */
+  will-change: backdrop-filter;
 }
 
 .header-inner {
