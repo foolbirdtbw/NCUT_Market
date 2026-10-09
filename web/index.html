@@ -36,6 +36,8 @@
         <!-- 同上，徽标由 notifications.js 追加。 -->
         <a href="#/notifications" id="nav-notifications">通知</a>
         <a href="#/announcements">公告</a>
+        <!-- 反馈板不藏：未登录也能看列表，只是发帖框和点赞按钮不可用。 -->
+        <a href="#/feedback">反馈</a>
         <!-- 这三条只有管理员看得到，由 app.js 的 paintNavVisibility() 按角色切。 -->
         <a href="#/categories" id="nav-categories">分类</a>
         <a href="#/dormitory-areas" id="nav-dormitory-areas">宿舍区</a>
@@ -83,6 +85,7 @@
   <script src="js/messages.js"></script>
   <script src="js/notifications.js"></script>
   <script src="js/announcements.js"></script>
+  <script src="js/feedback.js"></script>
   <!-- 这两份要排在 app.js 前面：app.js 建路由表时就要用到 dictionaries 和 users。 -->
   <script src="js/dictionaries.js"></script>
   <script src="js/users.js"></script>

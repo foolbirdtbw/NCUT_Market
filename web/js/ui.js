@@ -135,6 +135,28 @@ window.NM = (function () {
     return USER_STATUSES[value] || "未知状态";
   }
 
+  /* 反馈的分类和处理状态。同样是按枚举值索引的表，0 号留空。 */
+  var FEEDBACK_KINDS = ["", "问题反馈", "功能建议"];
+
+  function feedbackKindText(value) {
+    return FEEDBACK_KINDS[value] || "未知类型";
+  }
+
+  var FEEDBACK_STATUSES = ["", "待处理", "已采纳", "已完成", "不考虑"];
+
+  function feedbackStatusText(value) {
+    return FEEDBACK_STATUSES[value] || "未知状态";
+  }
+
+  /* 管理员改状态用的下拉，照 conditionOptions 的写法。 */
+  function feedbackStatusOptions(selected) {
+    return FEEDBACK_STATUSES.slice(1).map(function (text, index) {
+      var value = index + 1;
+      return '<option value="' + value + '"' + (value === selected ? " selected" : "") + '>' +
+        esc(text) + '</option>';
+    }).join("");
+  }
+
   /* 分类是自引用树，接口给的是扁平表。转成带缩进的 <option>，够用且不用递归渲染。 */
   function categoryOptions(categories, selected) {
     var byParent = {};
@@ -183,6 +205,9 @@ window.NM = (function () {
     statusText: statusText,
     statusBadge: statusBadge,
     userStatusText: userStatusText,
+    feedbackKindText: feedbackKindText,
+    feedbackStatusText: feedbackStatusText,
+    feedbackStatusOptions: feedbackStatusOptions,
     categoryOptions: categoryOptions,
     areaOptions: areaOptions
   };

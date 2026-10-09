@@ -113,7 +113,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | | 说明 |
 |---|---|
 | `UserRole.User = 1` | 发布商品、私信、交易 |
-| `UserRole.Admin = 2` | 额外的：公告发布/删除、分类增删改、宿舍区增删改、搜用户、发密码重置码 |
+| `UserRole.Admin = 2` | 额外的：公告发布/删除、分类增删改、宿舍区增删改、搜用户、发密码重置码、标记反馈状态/删反馈 |
 | `UserStatus.Active = 1` / `Disabled = 2` | **用户从不物理删除**，停用是唯一的移除方式（所有指向 `users` 的外键都是 `RESTRICT`） |
 
 角色**不从 JWT 里读**，每次管理操作都回数据库查 `role == Admin && status == Active`（`IsAdminAsync`）。所以手工提权下一条请求就生效，不用重新登录。停用账号被挡在登录、重置密码、`GET /api/auth/me` 和管理操作之外——注意这里有个已知的缝：**停用之前签发的 token 在普通会员接口上照旧管用**，那些路径不复查状态。
@@ -228,9 +228,29 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 
 `status == Active && last_seen_at >= 现在 - 5 分钟`。中间件在**每个带 token 的请求**上写 `users.last_seen_at`，匿名请求一次都不写。所以这个数的意思是「最近 5 分钟有过请求的活跃账号」，**不是「此刻开着页面的人数」**——服务端没有会话，分不出两个匿名请求是不是同一个人。页脚那句说明文字就是为了这个。
 
+### 问题反馈
+
+一块公开的反馈板：**所有人（含未登录）都能读**，登录用户可以发帖和点赞，管理员改处理状态、删帖。用户照着上面点赞多的内容决定接下来是修代码还是加功能。
+
+| | 说明 |
+|---|---|
+| 谁能发 | 任何登录账号，发帖时可勾**匿名**。匿名帖库里照样写 `author_id`，但没有任何接口吐出来——`FeedbackResponse` 里根本没有这个字段，所以连管理员也读不到 |
+| 点赞 | 一人一票，由 `uk_feedback_votes_feedback_id_user_id` 保证。`POST {id}/vote` 是**开关**：没投过就插一行，投过就删掉那一行，返回最新的 `voteCount` 和 `hasVoted` |
+| 排序 | 赞同数倒序 → 时间倒序 → `id` 倒序。只有这一种排序，没有按分类/状态的筛选 |
+| 分类 | `FeedbackKind`：`Bug=1` 问题反馈、`Feature=2` 功能建议 |
+| 状态 | `FeedbackStatus`：`Open=1` 待处理（新帖默认）、`Accepted=2` 已采纳、`Done=3` 已完成、`Rejected=4` 不考虑 |
+
+**匿名是"存了但不发"**，不是另一张表或另一个账号：`AuthorId` 有外键、有索引，只是不投影进任何 DTO——这是本仓库第一列这样的字段。
+
+**`feedbacks` 上没有 `vote_count` 冗余列。**计数和排序都是对 `feedback_votes` 的相关子查询（`x.Votes.Count`），不维护第二处真相。
+
+**发帖人不能删自己的帖**，只有管理员能删——一块谁都能悄悄撤下的板子，赞数就没有意义了。删帖时 `feedback_votes` 靠 `ON DELETE CASCADE` 一起走。
+
+**点赞之后列表不重排。**服务端返回真实计数，前端只改那颗按钮（换个颜色、换个数字）；新次序要下次进页面才生效，否则刚点的那条会当场跳走。
+
 ## 数据库
 
-9 张表，`utf8mb4` / `utf8mb4_0900_ai_ci`，每张表的主键都是 `id BIGINT AUTO_INCREMENT`。**列名不用逐个写 `HasColumnName`**——`AppDbContext.ApplySnakeCaseColumnNames` 在配置之后统一把 CLR 属性名转成 snake_case（`TransactionBuyerId` → `transaction_buyer_id`）。
+11 张表，`utf8mb4` / `utf8mb4_0900_ai_ci`，每张表的主键都是 `id BIGINT AUTO_INCREMENT`。**列名不用逐个写 `HasColumnName`**——`AppDbContext.ApplySnakeCaseColumnNames` 在配置之后统一把 CLR 属性名转成 snake_case（`TransactionBuyerId` → `transaction_buyer_id`）。
 
 | 表 | 装什么 | 关键约束 |
 |---|---|---|
@@ -243,6 +263,8 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `messages` | 消息正文 | `conversation_id` **CASCADE**；索引 `(conversation_id, id)` 专供倒序翻页 |
 | `notifications` | 站内通知，标题正文**提前渲染好** | `related_product_id` **SET NULL**——商品硬删了通知还在，因为文本已经写死在行里 |
 | `announcements` | 公告 | — |
+| `feedbacks` | 问题反馈 / 功能建议 + 处理状态 | `author_id` RESTRICT（匿名帖也照写）；索引 `idx_feedbacks_created_at` |
+| `feedback_votes` | 一票一行 | `uk_feedback_votes_feedback_id_user_id`（**一人一票**）；`feedback_id` **CASCADE**、`user_id` RESTRICT |
 
 几个值得单独说的：
 
@@ -250,11 +272,11 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 - **软删没有全局过滤器。**`products.deleted_at` 是业务字段，靠每个查询自己显式过滤，没有 `HasQueryFilter`。
 - **交易记录就是 `products` 上的四列**（`transaction_buyer_id`、`transaction_accepted_at`、`buyer_confirmed_at`、`seller_confirmed_at`），没确认的提议则是 `conversations` 上的两列。没有单独的 `transactions` 表——这是「软删而不是硬删」那条规则的全部理由。
 - **`last_activity_at` / `last_message_at` 不是审计列**，是业务字段，只由各自的 service 手工推进。审计那套自动盖章不碰它们（否则「这个商品被真的改过」会被每次保存刷新，留给草稿清理的那个时钟就永远走不动）。
-- 迁移是**手工执行**的（`dotnet ef database update`），启动时不建表、不改表。九个迁移按顺序：`InitialCreate` → `AddUserRoleAndMessaging` → `AddProductTransaction` → `DropImageOriginalKey` → `AddPasswordResetCode` → `AddUserLastSeenAt` → `AddUserStudentId` → `AddProductDeletedAt` → `AddConversationHide`。
+- 迁移是**手工执行**的（`dotnet ef database update`），启动时不建表、不改表。十个迁移按顺序：`InitialCreate` → `AddUserRoleAndMessaging` → `AddProductTransaction` → `DropImageOriginalKey` → `AddPasswordResetCode` → `AddUserLastSeenAt` → `AddUserStudentId` → `AddProductDeletedAt` → `AddConversationHide` → `AddFeedback`。
 
 ## HTTP 接口
 
-48 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
+53 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
 
 | 资源 | 端点 |
 |---|---|
@@ -265,6 +287,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `api/categories` | `GET` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/dormitory-areas` | `GET`、`GET {id}` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/announcements` | `GET` 匿名；`POST` / `DELETE {id}` 管理员 |
+| `api/feedback` | `GET` 匿名（登录了会标出自己赞过的）；`POST`、`POST {id}/vote` 需登录；`PUT {id}/status`、`DELETE {id}` 管理员 |
 | `api/users` | `GET`、`POST {id}/reset-password` 管理员 |
 | `api/online` | `GET count`（匿名） |
 | 非控制器 | `GET /health`；Development 下还有 `/openapi/v1.json`、`/scalar/v1`、`GET /dev/errors/throw/{kind}` |

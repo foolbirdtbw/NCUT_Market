@@ -20,6 +20,7 @@
     [/^\/messages\/(\d+)$/, function (match, query) { messages.showThread(match[1], query); }],
     [/^\/notifications$/, function (match, query) { notifications.showList(query); }],
     [/^\/announcements$/, function (match, query) { announcements.showList(query); }],
+    [/^\/feedback$/, function (match, query) { feedback.showList(query); }],
     [/^\/login$/, function () { auth.showLogin(); }],
     [/^\/register$/, function () { auth.showRegister(); }],
     [/^\/forgot$/, function () { auth.showForgot(); }],
@@ -293,6 +294,20 @@
     })
     .on("click", "[data-action='delete-announcement']", function () {
       announcements.deleteAnnouncement($(this).attr("data-announcement-id"));
+    })
+    .on("submit", "#feedback-form", function (event) {
+      event.preventDefault();
+      feedback.submit();
+    })
+    /* 点赞不重新拉列表（见 feedback.js 开头），所以这里也不重新路由。 */
+    .on("click", "[data-action='vote-feedback']", function () {
+      feedback.toggleVote($(this).attr("data-feedback-id"));
+    })
+    .on("change", "[data-action='set-feedback-status']", function () {
+      feedback.setStatus($(this).attr("data-feedback-id"), $(this).val());
+    })
+    .on("click", "[data-action='delete-feedback']", function () {
+      feedback.remove($(this).attr("data-feedback-id"));
     })
     .on("submit", "#category-form", function (event) {
       event.preventDefault();

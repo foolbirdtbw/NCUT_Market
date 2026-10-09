@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IConversationService, ConversationService>();
         services.AddScoped<IAnnouncementService, AnnouncementService>();
+        services.AddScoped<IFeedbackService, FeedbackService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ITransactionService, TransactionService>();
         services.AddScoped<IOnlineService, OnlineService>();

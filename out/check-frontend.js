@@ -17,8 +17,8 @@ const root = path.join(__dirname, "..", "web", "js");
 // 每个文件都要读：下面那道"未声明就赋值"的检查是逐文件做的。
 const files = [
   "ui.js", "auth.js", "api.js", "products.js",
-  "messages.js", "notifications.js", "announcements.js", "dictionaries.js",
-  "users.js", "app.js"
+  "messages.js", "notifications.js", "announcements.js", "feedback.js",
+  "dictionaries.js", "users.js", "app.js"
 ];
 
 const sources = {};
@@ -178,6 +178,8 @@ const formatPrice = wrap(["formatPrice"], "formatPrice");
 const conditionText = wrap(["CONDITIONS", "conditionText"], "conditionText");
 const statusText = wrap(["STATUSES", "statusText"], "statusText");
 const userStatusText = wrap(["USER_STATUSES", "userStatusText"], "userStatusText");
+const feedbackKindText = wrap(["FEEDBACK_KINDS", "feedbackKindText"], "feedbackKindText");
+const feedbackStatusText = wrap(["FEEDBACK_STATUSES", "feedbackStatusText"], "feedbackStatusText");
 const categoryOptions = wrap(["esc", "categoryOptions"], "categoryOptions");
 // treeHtml 在 dictionaries.js 里，调的是 NM.esc 而不是裸的 esc。补一个最小的 NM 顶上。
 const treeHtml = wrap(["esc", "treeHtml"], "treeHtml", "var NM = { esc: esc };");
@@ -272,6 +274,20 @@ check("账号 2", userStatusText(2), "已停用");
 check("账号 0（哨兵值）", userStatusText(0), "未知状态");
 check("账号越界", userStatusText(9), "未知状态");
 check("账号 undefined", userStatusText(undefined), "未知状态");
+
+console.log("\nfeedbackKindText() / feedbackStatusText()");
+
+/* 第三、第四张枚举表。同样是"值撞车、复用就出错"的老问题：反馈状态的 2 是「已采纳」，
+ * 商品状态的 2 是「在售」。 */
+check("分类 1", feedbackKindText(1), "问题反馈");
+check("分类 2", feedbackKindText(2), "功能建议");
+check("分类越界", feedbackKindText(9), "未知类型");
+
+check("反馈状态 1", feedbackStatusText(1), "待处理");
+check("反馈状态 2 和商品状态 2 不是一回事", feedbackStatusText(2) === statusText(2), false);
+check("反馈状态 4", feedbackStatusText(4), "不考虑");
+check("反馈状态 0（哨兵值）", feedbackStatusText(0), "未知状态");
+check("反馈状态越界", feedbackStatusText(9), "未知状态");
 
 console.log("\ncategoryOptions()");
 

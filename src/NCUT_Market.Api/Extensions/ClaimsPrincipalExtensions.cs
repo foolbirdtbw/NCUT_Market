@@ -43,4 +43,21 @@ internal static class ClaimsPrincipalExtensions
 
         return userId;
     }
+
+    /// <summary>
+    /// The user id carried in the token's subject claim, or null when the request is anonymous.
+    /// </summary>
+    /// <param name="principal">The possibly-anonymous principal.</param>
+    /// <remarks>
+    /// For an endpoint that serves both audiences and varies only a detail of the answer. The feedback
+    /// board is the case: it is readable without signing in, but a signed-in reader gets the rows they
+    /// have already voted for marked. Unlike <see cref="GetUserId"/> a missing subject is a legitimate
+    /// state here — there is nothing wrong with the request, and there is no 401 to raise.
+    /// </remarks>
+    public static long? GetUserIdOrNull(this ClaimsPrincipal principal)
+    {
+        var subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+
+        return long.TryParse(subject, CultureInfo.InvariantCulture, out var userId) ? userId : null;
+    }
 }

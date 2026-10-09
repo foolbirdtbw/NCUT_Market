@@ -525,6 +525,16 @@ textarea { resize: vertical; }
 /* 用户有待使用的重置码。和「交易中」一样是「还在动」的状态，所以同一个颜色。 */
 .badge-pending { border-color: var(--accent); color: var(--accent); }
 
+/* 反馈板的分类和处理状态。分类借已有的语义色——问题是「坏了」用错误色，建议是「想要」用
+   强调色。状态四档：待处理是默认灰（还没人动它），已采纳和「交易中」同一支色（决定了但还没做），
+   已完成走成功色，不考虑用「已售出」那支中性色——它是结论，不是错误。 */
+.badge-kind-bug { border-color: var(--danger); color: var(--danger); }
+.badge-kind-feature { border-color: var(--accent); color: var(--accent); }
+.badge-open { border-color: var(--muted); color: var(--muted); }
+.badge-accepted { border-color: var(--accent); color: var(--accent); }
+.badge-done { border-color: var(--success); color: var(--success); }
+.badge-rejected { border-color: var(--badge-sold-ink); color: var(--badge-sold-ink); }
+
 .loading { padding: 24px 0; text-align: center; color: var(--muted); }
 .empty { padding: 24px 0; text-align: center; color: var(--muted); }
 
@@ -1004,6 +1014,8 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   align-items: flex-start;
   gap: 10px;
   padding: 8px 0;
+  /* 同 .conv-row：深色下 16px，hover 那层薄白才跟着圆。 */
+  border-radius: var(--radius-ctl);
   border-bottom: 1px dotted var(--border);
 }
 
@@ -1025,7 +1037,12 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 /* ---------- 公告页 ---------- */
 
 .announcement-list { list-style: none; margin: 0; padding: 0; }
-.announcement-item { padding: 8px 0; border-bottom: 1px dotted var(--border); }
+.announcement-item {
+  padding: 8px 0;
+  /* 同 .conv-row：深色下 16px，hover 那层薄白才跟着圆。 */
+  border-radius: var(--radius-ctl);
+  border-bottom: 1px dotted var(--border);
+}
 .announcement-item:last-child { border-bottom: none; }
 
 .announcement-head { display: flex; align-items: center; gap: 10px; }
@@ -1033,6 +1050,46 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .announcement-head .muted { font-size: 12px; white-space: nowrap; }
 
 .announcement-body { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
+
+/* ---------- 反馈板 ---------- */
+
+.feedback-list { list-style: none; margin: 0; padding: 0; }
+.feedback-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  /* 同上：深色下 16px，hover 浮起来的那层薄白才跟着圆。浅色是 0，逐像素不变。 */
+  border-radius: var(--radius-ctl);
+  border-bottom: 1px dotted var(--border);
+}
+.feedback-item:last-child { border-bottom: none; }
+
+/* 点赞是整行唯一的动作，所以单独占一列并贴顶：正文再长也不该把它拉到中间去。 */
+.feedback-vote {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 52px;
+  padding: 6px 8px;
+}
+
+.feedback-vote .vote-arrow { font-size: 11px; line-height: 1; }
+.feedback-vote .vote-count { font-weight: 700; }
+.feedback-vote.is-voted { border-color: var(--accent); color: var(--accent); }
+
+/* min-width: 0 不能省。flex 项的 min-width 默认是 auto，一列长正文会把这一格撑得比容器还宽，
+   把旁边的点赞按钮压扁。 */
+.feedback-main { flex: 1; min-width: 0; }
+
+.feedback-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.feedback-head .muted { font-size: 12px; }
+
+.feedback-body { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
+
+.feedback-actions { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
 
 /* ---------- 用户管理页 ---------- */
 
@@ -1210,7 +1267,8 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
    没有行外的按钮，挂 .notice-item 就够。 */
 :root[data-theme="dark"] .conv-row:hover,
 :root[data-theme="dark"] .notice-item:hover,
-:root[data-theme="dark"] .announcement-item:hover { background: rgba(255, 255, 255, .06); }
+:root[data-theme="dark"] .announcement-item:hover,
+:root[data-theme="dark"] .feedback-item:hover { background: rgba(255, 255, 255, .06); }
 
 /* 弹窗：纯黑不透明会把整片夜景掐掉。压暗的墨蓝 + 一点模糊，图片仍然是主角。 */
 :root[data-theme="dark"] .lightbox {
