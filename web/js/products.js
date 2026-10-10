@@ -642,6 +642,188 @@ window.products = (function ($) {
     $("#generate-cover").text("没有照片？用标题生成一张");
   }
 
+  /* ---------- 发布助手：看图判违规、给价格区间、写描述 ---------- */
+
+  /* 服务端读用户自带 key 的那个头。只在这里出现一次。 */
+  var AI_KEY_HEADER = "X-Ai-Key";
+
+  /* 一次送几张。和服务端 AiOptions.MaxImages 对齐，那边也拦。 */
+  var AI_MAX_IMAGES = 3;
+
+  /* 送出去的边长。原始照片长边可能四千多像素，压到 1024 之后一张通常一两百 KB，
+   * 既不至于让人对着转圈等，也远在服务端单张 2 MB 的上限之内。
+   *
+   * 用 JPEG 而不是 PNG：照片本来就是有损来源，再存一遍无损只是让文件大三四倍。
+   * EXIF 的方向不用自己转——drawImage 一张 <img> 时浏览器已经按 EXIF 摆正了。 */
+  var AI_EDGE = 1024;
+
+  /* 按最长边缩到 AI_EDGE 以内，resolve 出来的是 Blob。
+   * 比 AI_EDGE 小的图不放大：手机拍的都够大，真有小图就原样送。 */
+  function downscale(file) {
+    var deferred = $.Deferred();
+    var url = URL.createObjectURL(file);
+    var image = new Image();
+
+    image.onload = function () {
+      URL.revokeObjectURL(url);
+
+      var scale = Math.min(1, AI_EDGE / Math.max(image.width, image.height));
+      var canvas = document.createElement("canvas");
+
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      /* toBlob 而不是 toDataURL：FormData 收 Blob 直接就行，走 data URI 还得把
+       * "data:image/jpeg;base64," 切下来再 atob 一遍，白绕一圈。 */
+      canvas.toBlob(function (blob) {
+        if (blob) {
+          deferred.resolve(blob);
+        } else {
+          deferred.reject({ message: "有一张图片没能压缩，换一张试试。" });
+        }
+      }, "image/jpeg", 0.82);
+    };
+
+    image.onerror = function () {
+      URL.revokeObjectURL(url);
+      deferred.reject({ message: "有一张图片读不出来，换一张试试。" });
+    };
+
+    image.src = url;
+
+    return deferred.promise();
+  }
+
+  /* 助手那一块。整块只在发布页出现——它要往 #form-description / #form-price 里填字，
+   * 那是这张表单自己的格子。 */
+  function aiPanelHtml() {
+    return '<div class="field-stack">' +
+      '<button type="button" class="button" id="ask-ai">AI 帮我看一下</button>' +
+      '<span class="hint">把照片发给 AI 看一眼：先判断有没有违规内容，没问题的话再帮你' +
+      '估个价、写一段描述。照片会离开本站发到 AI 服务，我们不留存。</span>' +
+      aiKeyHtml() +
+      '<div id="ai-slot"></div>' +
+      '</div>';
+  }
+
+  /* 自带 key 的输入框只在 HTTPS 下出现。
+   *
+   * 站点现在是 HTTP，而这个框里的东西点按钮时会明文发给我们。HTTP 下同一段校园网里谁都
+   * 能抓走它——这比"我们存不存它"严重得多，所以 HTTP 下这一整块干脆不存在：没有框可填，
+   * 也就没有 key 会在这条路上离开浏览器。共享的那把 key 不受影响，它从不离开服务器，
+   * 所以在 HTTP 下助手照样能用。 */
+  function aiKeyHtml() {
+    if (location.protocol !== "https:") {
+      return "";
+    }
+
+    return '<label for="ai-key">用自己的 API key（可选，不占额度）</label>' +
+      '<input type="password" id="ai-key" autocomplete="off" placeholder="sk-…">' +
+      '<span class="hint">填了就走你自己的 key，用多少次都行。它只在这个输入框里，' +
+      '点按钮时随那一个请求发一次，离开这一页就跟输入框一起没了。</span>';
+  }
+
+  function askAi() {
+    var input = $("#create-images");
+    var files = input.length && input[0].files ? Array.prototype.slice.call(input[0].files) : [];
+
+    if (!files.length) {
+      $("#ai-slot").html(NM.inlineError({ message: "先选至少一张照片，助手是照着照片看的。" }));
+      return;
+    }
+
+    // 服务端也拦，这里先拦一道：与其悄悄少送几张，不如说清楚一次只看得了这么多。
+    if (files.length > AI_MAX_IMAGES) {
+      $("#ai-slot").html(NM.inlineError({
+        message: "助手一次最多看 " + AI_MAX_IMAGES + " 张照片，先少选几张。"
+      }));
+      return;
+    }
+
+    $("#ask-ai").prop("disabled", true).text("看图中…");
+    $("#ai-slot").html('<div class="loading">正在看图…大概要十几秒。</div>');
+
+    // $.when 收一组 promise，全部成功才往下走；任何一个挂了都会带着它的原因落到失败分支。
+    $.when.apply($, files.map(downscale)).then(function () {
+      var formData = new FormData();
+
+      Array.prototype.slice.call(arguments).forEach(function (blob) {
+        // 字段名 images 是服务端 [FromForm] 绑定的名字；第三个参数给了，它才会当成文件。
+        formData.append("images", blob, "photo.jpg");
+      });
+
+      formData.append("title", $("#form-title").val().trim());
+
+      var category = $("#form-category").val();
+
+      if (category) {
+        formData.append("categoryId", category);
+      }
+
+      /* 自带 key 只在这里读一次。HTTP 下 #ai-key 不存在，$() 是空集，.val() 给 undefined，
+       * 于是这个头根本不发出去。 */
+      var own = $("#ai-key").val();
+      var extra = {};
+
+      if (own && own.trim()) {
+        extra[AI_KEY_HEADER] = own.trim();
+      }
+
+      return api.upload("/api/ai/listing-draft", formData, null, extra);
+    }).then(function (suggestion) {
+      showSuggestion(suggestion);
+    }, function (error) {
+      $("#ai-slot").html(NM.inlineError(error));
+    }).always(function () {
+      $("#ask-ai").prop("disabled", false).text("AI 帮我看一下");
+    });
+  }
+
+  /* 把助手的答复铺到表单上。
+   *
+   * description 和 flagReason 是模型写出来的、彻头彻尾不可信的文本。描述走 .val()，
+   * 理由走 NM.esc()，这里任何一个位置都不许拿 .html() 拼它们——这是这次改动里唯一一个
+   * 能引进 XSS 的口子。 */
+  function showSuggestion(suggestion) {
+    var parts = [];
+
+    if (suggestion.flagged) {
+      parts.push('<div class="ai-verdict is-flagged">' +
+        '<strong>助手觉得这些照片可能有问题。</strong> ' +
+        NM.esc(suggestion.flagReason || "照片里可能有违规内容。") +
+        '<p class="hint">这只是提示，不拦着你发布。请自己确认照片没问题再上架。</p>' +
+        '</div>');
+    } else {
+      parts.push('<div class="ai-verdict">照片看着没问题。</div>');
+    }
+
+    if (suggestion.description) {
+      $("#form-description").val(suggestion.description);
+      parts.push('<p class="hint">描述已经填进上面的框里了，直接改就行。</p>');
+    }
+
+    if (suggestion.priceLow != null && suggestion.priceHigh != null) {
+      // 价格框先填区间的中值，区间本身照样写出来，让人自己判断。
+      var middle = Math.round((suggestion.priceLow + suggestion.priceHigh) / 2 * 100) / 100;
+
+      $("#form-price").val(middle);
+
+      parts.push('<p>按站内同类商品估的：' + NM.esc(NM.formatPrice(suggestion.priceLow)) +
+        ' – ' + NM.esc(NM.formatPrice(suggestion.priceHigh)) +
+        '。价格框先填了中间值 ' + NM.esc(NM.formatPrice(middle)) + '，请自己确认。</p>');
+    } else {
+      parts.push('<p class="hint">选好分类才能给价格建议——那时候才有同类商品的真实价格可比。</p>');
+    }
+
+    if (suggestion.remainingToday != null) {
+      parts.push('<p class="hint">今天还剩 ' + suggestion.remainingToday + ' 次。</p>');
+    }
+
+    $("#ai-slot").html(parts.join(""));
+  }
+
   /* 当前页面的商品 id。从 hash 里读，不靠闭包——事件是委托的，
    * 处理函数不记得是哪个页面渲染的它。 */
   function currentProductId() {
@@ -778,6 +960,7 @@ window.products = (function ($) {
       '<button type="button" class="button" id="generate-cover">没有照片？用标题生成一张</button>' +
       '<div id="cover-slot"></div>' +
       '</div>' +
+      aiPanelHtml() +
       '<div id="form-error"></div>' +
       '<button class="button button-primary" type="submit" id="create-submit">创建并上架</button>' +
       '</form>' +
@@ -993,6 +1176,7 @@ window.products = (function ($) {
     deleteImage: deleteImage,
     generateCover: generateCover,
     discardCover: discardCover,
+    askAi: askAi,
     openImage: openImage,
     closeImage: closeImage
   };

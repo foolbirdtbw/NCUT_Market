@@ -89,8 +89,11 @@ window.api = (function ($) {
     del: function (url) { return request("DELETE", url, null); },
 
     /* 传图。必须 processData/contentType 都关掉，否则 jQuery 会把 FormData 序列化成
-     * 字符串并自己填一个 Content-Type，multipart 的 boundary 就没了，服务端收到的是空文件。 */
-    upload: function (url, formData, onProgress) {
+     * 字符串并自己填一个 Content-Type，multipart 的 boundary 就没了，服务端收到的是空文件。
+     *
+     * extraHeaders 是"随这一条请求捎一个自定义头"用的。目前只有一个调用点：发布助手的
+     * X-Ai-Key（用户自带的那把模型 key 就挂在这里）。它不设默认值，也不进任何持久化的地方。 */
+    upload: function (url, formData, onProgress, extraHeaders) {
       var settings = {
         url: url,
         method: "POST",
@@ -100,10 +103,22 @@ window.api = (function ($) {
         dataType: "json"
       };
 
+      var headers = {};
       var current = token();
 
       if (current) {
-        settings.headers = { Authorization: "Bearer " + current };
+        headers.Authorization = "Bearer " + current;
+      }
+
+      if (extraHeaders) {
+        Object.keys(extraHeaders).forEach(function (name) {
+          headers[name] = extraHeaders[name];
+        });
+      }
+
+      // 两个都没有时索性不设 headers，保持加这个参数之前的行为。
+      if (Object.keys(headers).length) {
+        settings.headers = headers;
       }
 
       if (onProgress) {

@@ -265,7 +265,11 @@ static string CodeForStatus(int statusCode) => statusCode switch
     StatusCodes.Status405MethodNotAllowed => ErrorCodes.MethodNotAllowed,
     StatusCodes.Status409Conflict => ErrorCodes.Conflict,
     StatusCodes.Status415UnsupportedMediaType => ErrorCodes.UnsupportedMediaType,
+    StatusCodes.Status429TooManyRequests => ErrorCodes.QuotaExceeded,
     StatusCodes.Status501NotImplemented => ErrorCodes.NotImplemented,
+    // Above the 500 catch-all on purpose: a 503 has a specific code, and letting it fall through to
+    // INTERNAL_ERROR would give one status two codes depending on which table answered.
+    StatusCodes.Status503ServiceUnavailable => ErrorCodes.ServiceUnavailable,
     StatusCodes.Status504GatewayTimeout => ErrorCodes.Timeout,
     >= StatusCodes.Status500InternalServerError => ErrorCodes.InternalError,
     _ => ErrorCodes.BadRequest

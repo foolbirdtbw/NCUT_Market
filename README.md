@@ -95,6 +95,9 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `Environment` | 否 | 绑到 `ASPNETCORE_ENVIRONMENT`。不设的话 `dotnet run` 不带 profile 会跑成 Production，OpenAPI 和 Scalar 都不挂载 |
 | `Storage__UploadRoot` | 否 | 上传图落盘位置，默认 `<content-root>/data/uploads` |
 | `BackgroundJobs__Enabled` | 否 | 关掉交易扫尾后台任务。测试夹具就是这么关的 |
+| `Ai__ApiKey` | 否 | 发布助手用的模型 key。**不设也能启动**，只是助手那个按钮会返回「暂时用不了」，发布流程一点不受影响 |
+| `Ai__Model` | 否 | 模型名。**和下面的 BaseUrl 一起决定助手好不好用**，两个都得填对 |
+| `Ai__BaseUrl` | 否 | 默认 `https://api.deepseek.com/v1`。任何 OpenAI 兼容的服务都能换上，代码一行不用改 |
 
 ## 时间
 
@@ -276,7 +279,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 
 ## HTTP 接口
 
-53 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
+54 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
 
 | 资源 | 端点 |
 |---|---|
@@ -288,6 +291,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `api/dormitory-areas` | `GET`、`GET {id}` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/announcements` | `GET` 匿名；`POST` / `DELETE {id}` 管理员 |
 | `api/feedback` | `GET` 匿名（登录了会标出自己赞过的）；`POST`、`POST {id}/vote` 需登录；`PUT {id}/status`、`DELETE {id}` 管理员 |
+| `api/ai` | `POST listing-draft` 需登录。`multipart/form-data`：`images`（1..3 张，JPEG/PNG/WebP，单张 ≤ 2 MB）、可选 `categoryId`、可选 `title`。返回违规判定、价格区间、描述，**不落库**。见下面的「发布助手」 |
 | `api/users` | `GET`、`POST {id}/reset-password` 管理员 |
 | `api/online` | `GET count`（匿名） |
 | 非控制器 | `GET /health`；Development 下还有 `/openapi/v1.json`、`/scalar/v1`、`GET /dev/errors/throw/{kind}` |
@@ -311,8 +315,47 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `CONFLICT` | 409 | 唯一约束撞了 |
 | `INVALID_STATE` | 409 | **状态机拒绝**，不是唯一约束——客户端可以靠这个区分 |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | 图片解不出来 |
+| `QUOTA_EXCEEDED` | 429 | 发布助手当天的额度用完了。**不是限流**——重试没用，要等明天，或者自己带一把 key |
 | `NOT_IMPLEMENTED` / `TIMEOUT` | 501 / 504 | |
+| `SERVICE_UNAVAILABLE` | 503 | 发布助手暂时用不了（没配 key、模型超时、模型答非所问）。**发布不受影响** |
 | `INTERNAL_ERROR` | 500 | 兜底 |
+
+## 发布助手
+
+发布商品那一页有个「AI 帮我看一下」：选好照片点一下，服务端把图发给一个多模态模型，一次拿回三样东西——**照片有没有违规内容**、**这个分类下大概卖多少钱**、**一段可以直接用的描述**。都填进表单，人可以随便改。
+
+**它是助手，不是闸门。** 判定违规只是显示一张警告卡，照样能发布；模型挂了、超时了、答非所问，也只是那个按钮报一句「暂时用不了」，**发布流程一行都不受影响**。v1 也不把任何结果落库。
+
+几件实现上的事，都可以对着源码核：
+
+- **一次调用。** `ListingAssistant.AskAsync` 是唯一碰图片的地方，也是将来要把违规判定换成专门的内容安全服务时的唯一改动点。
+- **价格不是模型编的。** 先查出这个分类下最近的 20 条真实商品（标题、价格、成色、是否成交），塞进 prompt，让模型的活变成「在这几个真实价之间给个区间」。没选分类就不给价格——与其给个猜的数字，不如说清楚为什么没有。
+- **额度。** 用服务器那把 `Ai__ApiKey` 时每人每天 3 次，计数在 `IMemoryCache` 里，**进程内、重启清零**；额度花掉了但模型失败的那次会退回来，不让供应商的故障吃掉用户的次数。自带 key 完全不计数。
+
+### 你自己的 API key 是怎么处理的
+
+HTTPS 下发布页会多出一个「用自己的 API key」的输入框。填了就用那把 key 调模型，不占每天 3 次。
+
+它在这套代码里走过的地方一共就下面这些，可以逐条 grep 核对：
+
+| 在哪 | 做什么 |
+|---|---|
+| `web/js/products.js` — `aiKeyHtml()` / `askAi()` | 一个 `<input type="password" id="ai-key">`。点按钮时 `$("#ai-key").val()` 读一次，塞进 `X-Ai-Key` 头随**那一个请求**发出 |
+| `web/js/api.js` — `upload(...)` 的第四个参数 | 原样放进 jQuery 的 `headers`。除此之外不看、不存、不打印 |
+| `Api/Controllers/AiController.cs` — `Request.Headers[KeyHeader]` | 从请求头读出来，作为参数传给服务层 |
+| `IListingAssistant.SuggestAsync` → `ListingAssistant.SuggestAsync` → `AskAsync` → `IAiChatClient.CompleteAsync` | 一路是**方法参数**，不赋给任何字段 |
+| `Infrastructure/Ai/AiChatClient.cs` | `request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey)`——全仓库唯一一次用到它 |
+
+**不做什么：**
+
+- **不落库。** 数据库里没有哪一列、哪一张表存过它——v1 连助手的结果都不写。
+- **不写日志。** `AiChatClient` 的 `catch` 里只记状态码。上游的 401 响应体常常长这样 `{"error":{"message":"Invalid API key: sk-..."}}`，**那段原文既不进日志、也不进返回给前端的 `detail`**，否则用户自带的那把 key 会被我们自己贴回去。`appsettings.json` 里把 `Microsoft.Extensions.Http` / `System.Net.Http.HttpClient` 压到 `Warning` 也是为了同一件事：这两个在 `Trace` 下会打印请求头。
+- **不回显。** `ListingSuggestionResponse` 里没有任何字段装得下它。`AiEndpointTests` 有一条测试直接对**原始响应字符串**断言哨兵 key 不出现，而不是只查我们想得到的字段。
+- **不进浏览器存储。** 不写 `localStorage`、不写 `sessionStorage`、不进 URL、不进 cookie，`autocomplete="off"`。刷新页面，或者离开这一页再回来，输入框就是空的。
+
+**为什么只有 HTTPS 才给这个框。** 这把 key 每次点按钮都会从浏览器明文发到服务器；站点跑在 HTTP 上的话，同一段校园网里谁都能抓到它——这个风险比「服务端存不存」大得多，所以 HTTP 下 `aiKeyHtml()` 直接返回空，**这一整块不存在**。共享的那把 `Ai__ApiKey` 不受影响：它从不离开服务器，HTTP 下助手照样能用。
+
+反过来说，我们**不承诺**「绝对不会泄露」——任何让人往浏览器里敲 key 的页面都做不到这个承诺。能做的是把上面这几条写清楚，并且每一条都能在源码里指出来。
 
 ## 测试
 

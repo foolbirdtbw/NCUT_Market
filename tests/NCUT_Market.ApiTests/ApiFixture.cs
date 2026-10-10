@@ -10,6 +10,7 @@ using NCUT_Market.Core.DTOs.Auth;
 using NCUT_Market.Core.Entities;
 using NCUT_Market.Core.Enums;
 using NCUT_Market.Core.Services;
+using NCUT_Market.Infrastructure.Ai;
 using NCUT_Market.Infrastructure.Jobs;
 using NCUT_Market.Infrastructure.Persistence;
 using NCUT_Market.Infrastructure.Security;
@@ -78,6 +79,17 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     /// <summary>The connection string the test host is using.</summary>
     public string ConnectionString { get; }
 
+    /// <summary>
+    /// The stand-in the listing assistant calls instead of a real model provider.
+    /// </summary>
+    /// <remarks>
+    /// Exposed because two of the assistant's tests assert on what was <em>sent</em> — the prompt
+    /// carrying the price comparables, and the key a caller's own request was forwarded with. Neither
+    /// is visible in a response, and both are things the feature would still look like it worked
+    /// without.
+    /// </remarks>
+    internal FakeAiChatClient Ai { get; } = new();
+
     /// <summary>Top-level category. Nothing is listed in it directly — children hold the listings.</summary>
     public long RootCategoryId { get; private set; }
 
@@ -124,6 +136,18 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
             // test class. A sweep firing mid-test would roll back trades the test is halfway through
             // asserting on, and the failure would look like a logic bug in the service.
             services.PostConfigure<BackgroundJobsOptions>(options => options.Enabled = false);
+
+            // Replaces the outbound model client outright, which is what keeps every test in this
+            // suite off the network — the same reason the JWT key and the upload root are replaced
+            // rather than merely overridden.
+            services.RemoveAll<IAiChatClient>();
+            services.AddSingleton<IAiChatClient>(Ai);
+
+            services.PostConfigure<AiOptions>(options =>
+            {
+                options.ApiKey = "test-shared-key";
+                options.Model = "test-model";
+            });
         });
     }
 

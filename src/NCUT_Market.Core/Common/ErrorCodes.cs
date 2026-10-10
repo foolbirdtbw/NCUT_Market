@@ -61,4 +61,27 @@ public static class ErrorCodes
     public const string NotImplemented = "NOT_IMPLEMENTED";
 
     public const string Timeout = "TIMEOUT";
+
+    /// <summary>
+    /// The caller has used up a metered allowance — today's share of the listing assistant's model
+    /// calls.
+    /// </summary>
+    /// <remarks>
+    /// A 429, and deliberately not the generic name for one: the status says "slow down", while this
+    /// says which allowance ran out and, on this endpoint, that bringing your own key sidesteps it
+    /// entirely. A client that shows "请求太频繁" to someone who simply had three questions today
+    /// has thrown away the only actionable part.
+    /// </remarks>
+    public const string QuotaExceeded = "QUOTA_EXCEEDED";
+
+    /// <summary>
+    /// A dependency outside this deployment could not be reached, or answered unusably.
+    /// </summary>
+    /// <remarks>
+    /// Distinguished from <see cref="InternalError"/> because the two are different incidents for
+    /// whoever is on call: this one means somebody else's service is down and the feature degrades,
+    /// while a 500 means our own code threw. The listing assistant's model provider is its only
+    /// source today.
+    /// </remarks>
+    public const string ServiceUnavailable = "SERVICE_UNAVAILABLE";
 }

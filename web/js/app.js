@@ -245,6 +245,7 @@
     })
     .on("click", "#generate-cover", function () { products.generateCover(); })
     .on("click", "[data-action='discard-cover']", function () { products.discardCover(); })
+    .on("click", "#ask-ai", function () { products.askAi(); })
     .on("click", "[data-action='contact-seller']", function () {
       messages.start($(this).attr("data-product-id"));
     })

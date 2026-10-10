@@ -672,6 +672,21 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   border-radius: var(--radius-ctl);
 }
 
+/* 发布助手给的判定。默认是"看着没问题"那一张，-flagged 才是警告。
+   故意不照抄 .form-error 的红底观感：这是一句提示，不是一次失败——违规的图照样能发布。 */
+.ai-verdict {
+  padding: 8px 10px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-ctl);
+  word-break: break-word;
+}
+
+.ai-verdict.is-flagged { border-color: var(--danger); }
+
+.ai-verdict p { margin: 6px 0 0; }
+
 .form-error {
   padding: 8px 10px;
   margin-bottom: 12px;

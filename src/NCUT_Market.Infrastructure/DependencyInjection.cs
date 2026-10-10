@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NCUT_Market.Core.Entities;
 using NCUT_Market.Core.Services;
+using NCUT_Market.Infrastructure.Ai;
 using NCUT_Market.Infrastructure.Jobs;
 using NCUT_Market.Infrastructure.Persistence;
 using NCUT_Market.Infrastructure.Security;
@@ -34,6 +36,7 @@ public static class DependencyInjection
         services.Configure<StorageOptions>(configuration.GetSection(StorageOptions.SectionName));
         services.Configure<BackgroundJobsOptions>(
             configuration.GetSection(BackgroundJobsOptions.SectionName));
+        services.Configure<AiOptions>(configuration.GetSection(AiOptions.SectionName));
 
         // PBKDF2 with a per-user salt and the framework's own format versioning. Registered rather
         // than hand-rolled: the iteration count and the encoded-hash format are things a
@@ -54,6 +57,32 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ITransactionService, TransactionService>();
         services.AddScoped<IOnlineService, OnlineService>();
+
+        // Not a cache in the usual sense: this holds the listing assistant's per-account daily
+        // counter, which is one small object per user per day. It is here rather than in a table
+        // because a single-instance deployment gets nothing from the extra write — see
+        // ListingAssistant for what that trade costs.
+        services.AddMemoryCache();
+
+        // The only outbound HTTP client in the project. Typed rather than named so the base address
+        // and the timeout come from options at resolution time; the client is what carries the
+        // credentials, and AiChatClient is the only class that ever sees them.
+        services.AddHttpClient<AiChatClient>((provider, client) =>
+        {
+            var ai = provider.GetRequiredService<IOptions<AiOptions>>().Value;
+
+            // Trailing slash matters: without it, a relative "chat/completions" replaces the last
+            // path segment instead of being appended to it.
+            client.BaseAddress = new Uri(ai.BaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(ai.TimeoutSeconds);
+        });
+
+        // AddHttpClient<T> registers T, not the interface it implements. The service depends on
+        // IAiChatClient, and that registration is what lets the test host swap in a stand-in without
+        // also having to take the whole HttpClient pipeline with it.
+        services.AddScoped<IAiChatClient>(provider => provider.GetRequiredService<AiChatClient>());
+
+        services.AddScoped<IListingAssistant, ListingAssistant>();
 
         // The first hosted service in the project. It starts the trade-deadline sweep, and it is
         // switched off in the test host through BackgroundJobsOptions — see that type.

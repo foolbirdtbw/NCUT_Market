@@ -72,7 +72,9 @@ internal static class ProblemResults
         ErrorCodes.Conflict => StatusCodes.Status409Conflict,
         ErrorCodes.InvalidState => StatusCodes.Status409Conflict,
         ErrorCodes.UnsupportedMediaType => StatusCodes.Status415UnsupportedMediaType,
+        ErrorCodes.QuotaExceeded => StatusCodes.Status429TooManyRequests,
         ErrorCodes.NotImplemented => StatusCodes.Status501NotImplemented,
+        ErrorCodes.ServiceUnavailable => StatusCodes.Status503ServiceUnavailable,
         ErrorCodes.Timeout => StatusCodes.Status504GatewayTimeout,
         _ => StatusCodes.Status500InternalServerError
     };
@@ -90,7 +92,9 @@ internal static class ProblemResults
         StatusCodes.Status405MethodNotAllowed => "不支持这个请求方法",
         StatusCodes.Status409Conflict => "操作冲突",
         StatusCodes.Status415UnsupportedMediaType => "不支持这种文件类型",
+        StatusCodes.Status429TooManyRequests => "今天用得有点多",
         StatusCodes.Status501NotImplemented => "功能还没做",
+        StatusCodes.Status503ServiceUnavailable => "这个功能暂时用不了",
         StatusCodes.Status504GatewayTimeout => "请求超时",
         _ => "服务器出错了"
     };
