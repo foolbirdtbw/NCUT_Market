@@ -108,8 +108,10 @@ window.auth = (function ($) {
       paint();
       return current;
     }, function () {
-      // 401 已经在 api.js 里走 expire() 了；其它错误也只是让人这次按未登录渲染。
-      signOut();
+      /* 401 已经在 api.js 的 fail() 里走过 expire() 了（清 token + 跳登录页），这里不用再来一遍。
+       * 其余的失败——网络抖一下、服务端 500——和登录状态毫无关系，叫 signOut() 就等于把
+       * localStorage 里那个好好的 token 清掉、让人白掉一次线。什么都不做：按本地缓存渲染这一次，
+       * 下一个请求成功时会自己纠正过来。 */
       return null;
     });
   }

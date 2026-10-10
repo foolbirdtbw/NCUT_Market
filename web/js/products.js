@@ -315,8 +315,10 @@ window.products = (function ($) {
       NM.statusBadge(product.status) +
       '</div>' +
       '<div class="detail-price">' + price(product.price) + '</div>' +
+      /* 换行交给 .lede 的 white-space: pre-wrap，不在这里替 <br>——全站一条纪律，
+       * 见 web/README.md。替了等于把用户输入又拼一次 HTML。 */
       '<p class="lede">' + (product.description
-        ? NM.esc(product.description).replace(/\n/g, "<br>")
+        ? NM.esc(product.description)
         : "卖家没有写描述。") + '</p>' +
       '<div class="detail-meta">' +
       '<span>分类：' + NM.esc(product.categoryName) + '</span>' +
@@ -482,7 +484,9 @@ window.products = (function ($) {
     var lines = [];
 
     for (var start = 0; start < text.length && lines.length < COVER_MAX_LINES; start += COVER_LINE_CHARS) {
-      lines.push(text.substr(start, COVER_LINE_CHARS));
+      /* substring 的第二个参数是结束下标，不是长度——substr 已废弃，而且两者混用时
+       * 一旦有人改掉 COVER_LINE_CHARS 的含义就会静默切错。 */
+      lines.push(text.substring(start, start + COVER_LINE_CHARS));
     }
 
     if (!lines.length) {
@@ -538,7 +542,7 @@ window.products = (function ($) {
     var titleSize = 76;
 
     /* 全角字比半角宽得多，八个全角字在 76px 下会顶到内框。量一下最宽的那行，
-     * 按需要把整块缩小——只缩不小，短标题不会撑成大号字。 */
+     * 按需要把整块缩小——只缩不涨，短标题不会撑成大号字。 */
     context.font = coverFont(titleSize, true);
 
     lines.forEach(function (line) {
@@ -706,10 +710,15 @@ window.products = (function ($) {
   }
 
   function readForm() {
+    /* 价格单独留一份原文：Number("") 是 0，而 0 是个合法价格，所以过一遍 Number 之后就
+     * 分不出「没填」和「填了 0」了，input 上的 required 也就等于没有。留空记成 null，
+     * 交给 validate 去拦。 */
+    var rawPrice = $("#form-price").val().trim();
+
     return {
       title: $("#form-title").val().trim(),
       description: $("#form-description").val().trim() || null,
-      price: Number($("#form-price").val()),
+      price: rawPrice === "" ? null : Number(rawPrice),
       condition: Number($("#form-condition").val()),
       categoryId: Number($("#form-category").val()),
       dormitoryAreaId: Number($("#form-area").val())
@@ -720,7 +729,9 @@ window.products = (function ($) {
    * 服务端仍然会再验一次，这里只是省一次往返。 */
   function validate(body) {
     if (!body.title) { return "标题不能为空。"; }
-    if (!isFinite(body.price) || body.price < 0) { return "价格要填一个不小于 0 的数字。"; }
+    if (body.price == null || !isFinite(body.price) || body.price < 0) {
+      return "价格要填一个不小于 0 的数字。";
+    }
     if (!body.categoryId) { return "请选择分类。"; }
     if (!body.dormitoryAreaId) { return "请选择宿舍区。"; }
 
@@ -734,9 +745,21 @@ window.products = (function ($) {
    * 后面两步失败都能原地重试，不会丢掉已经填好的内容。 */
   var draft = null;
 
+  /* 待传的那批文件里已经成功了几张。重试要从这一张接着传：uploadAll 每次都从第 0 张开始的话，
+   * 上一次传成功的图会被原样再传一遍，而接口是往商品上追加的，列表里就凭空多出几张重复的图。 */
+  var uploadedCount = 0;
+
   function showCreate() {
     draft = null;
+    uploadedCount = 0;
     generatedCover = null;
+
+    /* 上一次进这一页时生成的那张封面预览还挂着（人都离开这一页了），把它连同它的 object URL
+     * 一起放掉。不 revoke 的话那个 Blob 会一直被浏览器攥着，直到下一次生成封面。 */
+    if (coverPreviewUrl) {
+      URL.revokeObjectURL(coverPreviewUrl);
+      coverPreviewUrl = null;
+    }
 
     $("#view").html(
       '<div class="card form-card">' +
@@ -775,9 +798,11 @@ window.products = (function ($) {
     $("#form-error").empty();
     $("#create-submit").prop("disabled", true).text("处理中…");
 
-    // 草稿已经建好就跳过第一步，直接从没传完的图接着走——重试时不会多建一个商品。
+    /* 草稿已经建好就跳过第一步，直接从没传完的图接着走——重试时不会多建一个商品。
+     * 但那几栏文字得再发一次：人点重试之前常常把标题或价格改了，不 PUT 的话服务端那份
+     * 还是第一次建草稿时的内容，改动就被静默丢掉，而表单上写着新的，看起来像是保存了。 */
     var creating = draft
-      ? $.Deferred().resolve(draft).promise()
+      ? api.put("/api/products/" + draft.id, body).then(function () { return draft; })
       : api.post("/api/products", body).then(function (created) { draft = created; return created; });
 
     creating.then(function (product) {
@@ -813,7 +838,8 @@ window.products = (function ($) {
       return $.Deferred().resolve().promise();
     }
 
-    var done = 0;
+    // 起点是上一次已经传成功的张数，不是 0——见 uploadedCount 那处的说明。
+    var done = uploadedCount;
 
     function next() {
       if (done >= files.length) {
@@ -831,6 +857,8 @@ window.products = (function ($) {
         $("#create-submit").text("上传图片 " + overall + "%");
       }).then(function () {
         done += 1;
+        // 记在外层，失败被人点重试时才接得上这一张。
+        uploadedCount = done;
         return next();
       });
     }

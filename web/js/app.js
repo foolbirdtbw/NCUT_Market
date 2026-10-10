@@ -24,8 +24,9 @@
     [/^\/login$/, function () { auth.showLogin(); }],
     [/^\/register$/, function () { auth.showRegister(); }],
     [/^\/forgot$/, function () { auth.showForgot(); }],
-    // query 要传下去：宿舍区那页是分页的，不传的话翻到第 2 页再点刷新就跳回第 1 页。
+    // 分类不分页，没有 query 可传。
     [/^\/categories$/, function () { dictionaries.showCategories(); }],
+    // query 要传下去：宿舍区那页是分页的，不传的话翻到第 2 页再点刷新就跳回第 1 页。
     [/^\/dormitory-areas$/, function (match, query) { dictionaries.showDormitoryAreas(query); }],
     // 关键字和页码同理，都在 query 里。
     [/^\/users$/, function (match, query) { users.showUsers(query); }]

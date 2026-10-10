@@ -121,11 +121,16 @@ window.messages = (function ($) {
     }
 
     api.del("/api/conversations/" + id).then(function () {
-      location.hash = "#/messages";
+      /* 手工触发一次 hashchange，而不是把 hash 设成 "#/messages" 指望它自己换页：
+       * 人就站在这一页上时，赋值前后是同一个字符串，hashchange 根本不会来，被删掉的
+       * 那一行会一直留在屏幕上。notifications.js 里那条删除是同一个坑、同一种写法。 */
+      $(window).trigger("hashchange");
       refreshUnread();
     }, function (error) {
-      // 「这笔交易还在进行中」这类都在这里显示。列表已经渲染过了，就地放错误卡片。
-      $("#conv-list").html(NM.errorCard(error));
+      /* 「这笔交易还在进行中」「商品刚刚变了」这类都在这里显示。列表已经渲染过了，
+       * 所以在顶上补一张卡就够——换成 errorCard 会顺手把整个列表也弄没，删一条失败
+       * 不该有这种代价。 */
+      $("#conv-list").prepend(NM.inlineError(error));
     });
   }
 

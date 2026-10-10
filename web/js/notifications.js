@@ -181,7 +181,8 @@ window.notifications = (function ($) {
       $(window).trigger("hashchange");
       refreshUnread();
     }, function (error) {
-      $("#notice-list").html(NM.errorCard(error));
+      // 列表已经渲染过了，在顶上补一张卡就够——换成 errorCard 会把整个列表一起弄没。
+      $("#notice-list").prepend(NM.inlineError(error));
     });
   }
 

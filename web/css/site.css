@@ -507,7 +507,9 @@ textarea { resize: vertical; }
 .entry-card strong { font-size: 1.05rem; }
 .entry-card span { color: var(--muted); font-size: 12px; }
 
-.lede { max-width: 62ch; }
+/* 商品描述里的换行交给 pre-wrap，不在 JS 里替成 <br>（web/README.md 那条纪律）。
+   首页那句导语源码里没有换行，跟着一样渲染。 */
+.lede { max-width: 62ch; white-space: pre-wrap; word-break: break-word; }
 
 .state-card { text-align: center; padding: 20px; }
 
