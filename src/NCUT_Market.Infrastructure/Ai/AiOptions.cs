@@ -50,7 +50,13 @@ public sealed class AiOptions
     /// Model calls per account per day, for callers using <see cref="ApiKey"/>. Callers supplying
     /// their own key are not counted against this, since they are not spending our money.
     /// </summary>
-    public int DailyQuota { get; set; } = 3;
+    /// <remarks>
+    /// Generous on purpose while the site is still finding users: a seller who runs out mid-listing
+    /// has been given a reason to stop using the assistant, and the cost of being wrong in that
+    /// direction is a few cents of tokens. Turn it down once the number of accounts using it starts
+    /// to matter — it is a setting, so that needs no rebuild.
+    /// </remarks>
+    public int DailyQuota { get; set; } = 20;
 
     /// <summary>
     /// How many photos one request may carry. One is enough to judge a photo; the rest are for

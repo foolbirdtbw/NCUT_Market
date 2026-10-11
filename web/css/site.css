@@ -672,6 +672,24 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   border-radius: var(--radius-ctl);
 }
 
+/* 手选的那几张图的缩略图。空的时候不占位置——这个 div 一直在 DOM 里，没选图时里面
+   什么都没有，给个 margin 会在文件框和下面那句提示之间凭空多出一条缝。 */
+.image-thumbs:not(:empty) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+/* 定宽定高 + object-fit：竖着拍的手机照片不会被拉成一条，九张也能排成整齐的几行。 */
+.image-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
+}
+
 /* 发布助手给的判定。默认是"看着没问题"那一张，-flagged 才是警告。
    故意不照抄 .form-error 的红底观感：这是一句提示，不是一次失败——违规的图照样能发布。 */
 .ai-verdict {
@@ -1305,6 +1323,9 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 /* 用标题生成的那张封面是位图，不跟主题走（见 web/README.md）。深色下给它一圈亮边，
    免得它糊进背景里。 */
 :root[data-theme="dark"] .cover-preview { border-color: var(--border-strong); }
+
+/* 手选照片的缩略图同理，只是小得多，深色下那圈边是它们彼此之间唯一的间隔。 */
+:root[data-theme="dark"] .image-thumb { border-color: var(--border-strong); }
 
 /* 减少动态效果。所有过渡都走 --transition 这一个令牌，所以大部分情况下改它就够了；
    位移得单独关，因为它写在上面那几条 :hover 里，不是令牌。 */

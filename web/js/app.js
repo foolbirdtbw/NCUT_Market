@@ -245,6 +245,8 @@
     })
     .on("click", "#generate-cover", function () { products.generateCover(); })
     .on("click", "[data-action='discard-cover']", function () { products.discardCover(); })
+    // 选照片。change 不冒泡的说法只对老 IE 成立，现代浏览器里它冒得到 document。
+    .on("change", "#create-images", function () { products.showChosenImages(); })
     .on("click", "#ask-ai", function () { products.askAi(); })
     .on("click", "[data-action='contact-seller']", function () {
       messages.start($(this).attr("data-product-id"));

@@ -44,6 +44,15 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     public const string ConnectionStringVariable = "NCUT_TEST_CONNECTION";
 
     /// <summary>
+    /// Assistant calls per account per day in the test host.
+    /// </summary>
+    /// <remarks>
+    /// Small enough to spend inside a test. The shipped default is set for a site still finding users
+    /// and is deliberately not what the tests run against — see <c>AiOptions.DailyQuota</c>.
+    /// </remarks>
+    internal const int TestDailyQuota = 3;
+
+    /// <summary>
     /// Substring the connection string must contain. A guard against pointing these tests at the
     /// development database, which they would happily write to and never clean up.
     /// </summary>
@@ -147,6 +156,11 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
             {
                 options.ApiKey = "test-shared-key";
                 options.Model = "test-model";
+
+                // Pinned rather than left at whatever the deployment defaults to. The tests below
+                // spend this allowance on purpose and assert on the number left, so a change to the
+                // shipped default must not rewrite what they are testing.
+                options.DailyQuota = TestDailyQuota;
             });
         });
     }

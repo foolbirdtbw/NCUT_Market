@@ -57,13 +57,15 @@ public sealed class AiEndpointTests(ApiFixture fixture) : IClassFixture<ApiFixtu
     }
 
     [Fact]
-    public async Task A_shared_key_gets_three_tries_a_day()
+    public async Task A_shared_key_runs_out_for_the_day()
     {
         var (client, _) = await fixture.CreateSignedInClientAsync();
 
         var title = AiTestSupport.NewTitle();
 
-        for (var attempt = 1; attempt <= 3; attempt++)
+        // The allowance itself, not a number written into the test — the shipped default is set for
+        // a site still finding users and is not what this is about.
+        for (var attempt = 1; attempt <= ApiFixture.TestDailyQuota; attempt++)
         {
             var allowed = await client.AskAssistantAsync(title);
 
@@ -83,8 +85,8 @@ public sealed class AiEndpointTests(ApiFixture fixture) : IClassFixture<ApiFixtu
 
         var title = AiTestSupport.NewTitle();
 
-        // Past the shared allowance of three, which they never touch.
-        for (var attempt = 1; attempt <= 5; attempt++)
+        // Past the shared allowance, which they never touch.
+        for (var attempt = 1; attempt <= ApiFixture.TestDailyQuota + 2; attempt++)
         {
             var response = await client.AskAssistantAsync(title, apiKey: AiTestSupport.SentinelKey);
 
@@ -204,7 +206,31 @@ public sealed class AiEndpointTests(ApiFixture fixture) : IClassFixture<ApiFixtu
         Assert.Null(suggestion.PriceLow);
         Assert.Null(suggestion.PriceHigh);
 
+        // The title and the description are not tied to the category, so a seller who has typed
+        // nothing at all still gets both — which is the whole point of the button.
+        Assert.False(string.IsNullOrWhiteSpace(suggestion.Title));
         Assert.False(string.IsNullOrWhiteSpace(suggestion.Description));
+    }
+
+    [Fact]
+    public async Task A_title_longer_than_the_form_accepts_is_cut_down_to_it()
+    {
+        var (client, _) = await fixture.CreateSignedInClientAsync();
+
+        var response = await client.AskAssistantAsync(
+            AiTestSupport.NewTitle(FakeAiChatClient.LongTitleMarker));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var suggestion = await response.Content.ReadFromJsonAsync<ListingSuggestionResponse>();
+
+        Assert.NotNull(suggestion);
+        Assert.NotNull(suggestion.Title);
+
+        // The form would refuse anything past 100 characters, and a title the seller cannot save
+        // reads as the assistant being broken. Asserted on the content rather than only the length,
+        // so that a title arriving from somewhere else could not satisfy this.
+        Assert.Equal(new string('标', 100), suggestion.Title);
     }
 
     [Fact]

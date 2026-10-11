@@ -642,6 +642,42 @@ window.products = (function ($) {
     $("#generate-cover").text("没有照片？用标题生成一张");
   }
 
+  /* 手选的那几张图的预览。 */
+
+  /* 当前预览在用的 object URL。换一批图或者离开这一页时逐个 revoke——每选一次就新建一批，
+   * 不还的话浏览器会一直攥着那些 Blob 直到标签页关掉。 */
+  var chosenUrls = [];
+
+  function clearChosenImages() {
+    chosenUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+    chosenUrls = [];
+  }
+
+  /* 选完照片就把它们摆出来。文件还在浏览器里没上传，所以能直接把 object URL 当图片地址用——
+   * 不这么做的话选完九张只看得到一串文件名，挑错了也看不出来。
+   *
+   * 只看不删：从 FileList 里去掉一张得新建一个 DataTransfer 再塞回去，为一个"看着不对就重选"
+   * 的场景不值当——重新选一次就把它覆盖掉了。 */
+  function showChosenImages() {
+    var input = $("#create-images");
+    var files = input.length && input[0].files ? Array.prototype.slice.call(input[0].files) : [];
+
+    clearChosenImages();
+    $("#image-slot").empty();
+
+    if (!files.length) {
+      return;
+    }
+
+    $("#image-slot").html(files.map(function (file) {
+      var url = URL.createObjectURL(file);
+
+      chosenUrls.push(url);
+
+      return '<img class="image-thumb" src="' + url + '" alt="已选照片">';
+    }).join(""));
+  }
+
   /* ---------- 发布助手：看图判违规、给价格区间、写描述 ---------- */
 
   /* 服务端读用户自带 key 的那个头。只在这里出现一次。 */
@@ -701,8 +737,8 @@ window.products = (function ($) {
   function aiPanelHtml() {
     return '<div class="field-stack">' +
       '<button type="button" class="button" id="ask-ai">AI 帮我看一下</button>' +
-      '<span class="hint">把照片发给 AI 看一眼：先判断有没有违规内容，没问题的话再帮你' +
-      '估个价、写一段描述。照片会离开本站发到 AI 服务，我们不留存。</span>' +
+      '<span class="hint">选好照片再点：AI 先看一眼有没有违规内容，没问题的话再帮你起标题、' +
+      '写描述、估个价。下面那几栏空着也没关系。照片会离开本站发到 AI 服务，我们不留存。</span>' +
       aiKeyHtml() +
       '<div id="ai-slot"></div>' +
       '</div>';
@@ -788,6 +824,7 @@ window.products = (function ($) {
    * 能引进 XSS 的口子。 */
   function showSuggestion(suggestion) {
     var parts = [];
+    var filled = [];
 
     if (suggestion.flagged) {
       parts.push('<div class="ai-verdict is-flagged">' +
@@ -799,9 +836,20 @@ window.products = (function ($) {
       parts.push('<div class="ai-verdict">照片看着没问题。</div>');
     }
 
+    /* 标题和描述都直接覆盖，哪怕是卖家自己已经填过的——模型看过照片，它给的那版值得摆在
+     * 眼前，而两个框都能随手改回来。只覆盖空着的那种，反而会让人以为助手时灵时不灵。 */
+    if (suggestion.title) {
+      $("#form-title").val(suggestion.title);
+      filled.push("标题");
+    }
+
     if (suggestion.description) {
       $("#form-description").val(suggestion.description);
-      parts.push('<p class="hint">描述已经填进上面的框里了，直接改就行。</p>');
+      filled.push("描述");
+    }
+
+    if (filled.length) {
+      parts.push('<p class="hint">' + filled.join("和") + '已经填进下面的框里了，直接改就行。</p>');
     }
 
     if (suggestion.priceLow != null && suggestion.priceHigh != null) {
@@ -937,30 +985,42 @@ window.products = (function ($) {
     generatedCover = null;
 
     /* 上一次进这一页时生成的那张封面预览还挂着（人都离开这一页了），把它连同它的 object URL
-     * 一起放掉。不 revoke 的话那个 Blob 会一直被浏览器攥着，直到下一次生成封面。 */
+     * 一起放掉。不 revoke 的话那个 Blob 会一直被浏览器攥着，直到下一次生成封面。选了照片的
+     * 那排缩略图同理，它们也是 object URL。 */
     if (coverPreviewUrl) {
       URL.revokeObjectURL(coverPreviewUrl);
       coverPreviewUrl = null;
     }
+
+    clearChosenImages();
 
     $("#view").html(
       '<div class="card form-card">' +
       '<div class="card-head"><h1>发布商品</h1>' +
       '<a class="button" href="#/products">取消</a></div>' +
       '<ol class="steps">' +
-      '<li>填写信息</li><li>上传图片</li><li>上架</li>' +
+      '<li>选照片</li><li>填写信息</li><li>上架</li>' +
       '</ol>' +
       '<form id="create-form" novalidate>' +
-      formFieldsHtml(null) +
+      /* 照片在最前面，助手紧跟其后。
+       *
+       * 原来照片在整张表单的最后，于是「先选照片，让它帮你写」这件事要滚到最后才发现——
+       * 人已经把标题、描述、价格都自己填完了。助手要的输入就是照片，所以照片必须排在
+       * 它要填的那几栏前面。编辑页本来也是图片在最前，这样两页顺序也一致了。
+       *
+       * cover-slot 里那句「先填标题」现在指的是下面那一栏，读起来仍然通顺。 */
       '<div class="field-stack">' +
       '<label for="create-images">图片</label>' +
       '<input type="file" id="create-images" accept="image/jpeg,image/png,image/webp" multiple>' +
+      /* 选完图之后缩略图填在这里，见 showChosenImages。 */
+      '<div class="image-thumbs" id="image-slot"></div>' +
       '<span class="hint">JPEG / PNG / WebP，每张不超过 5 MB，最多 9 张。至少一张才能上架。</span>' +
       // type="button" 不能省，不然这个按钮会当成"创建并上架"提交。
       '<button type="button" class="button" id="generate-cover">没有照片？用标题生成一张</button>' +
       '<div id="cover-slot"></div>' +
       '</div>' +
       aiPanelHtml() +
+      formFieldsHtml(null) +
       '<div id="form-error"></div>' +
       '<button class="button button-primary" type="submit" id="create-submit">创建并上架</button>' +
       '</form>' +
@@ -1176,6 +1236,7 @@ window.products = (function ($) {
     deleteImage: deleteImage,
     generateCover: generateCover,
     discardCover: discardCover,
+    showChosenImages: showChosenImages,
     askAi: askAi,
     openImage: openImage,
     closeImage: closeImage

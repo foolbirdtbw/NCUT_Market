@@ -36,6 +36,9 @@ internal sealed class ListingAssistant(
     IOptions<AiOptions> options,
     ILogger<ListingAssistant> logger) : IListingAssistant
 {
+    /// <summary>Longest title the listing form will accept, so a long answer is not lost.</summary>
+    private const int MaxTitleChars = 100;
+
     /// <summary>Longest description the listing form will accept, so a verbose answer is not lost.</summary>
     private const int MaxDescriptionChars = 2000;
 
@@ -124,9 +127,10 @@ internal sealed class ListingAssistant(
             new ListingSuggestionResponse(
                 answer.Flagged,
                 Trim(answer.Reason),
+                TrimToLimit(answer.Title, MaxTitleChars),
                 low,
                 high,
-                TrimDescription(answer.Description),
+                TrimToLimit(answer.Description, MaxDescriptionChars),
                 remaining));
     }
 
@@ -249,13 +253,14 @@ internal sealed class ListingAssistant(
     {
         var prompt = new StringBuilder();
 
-        prompt.AppendLine("你是一个校园二手交易平台的发布助手。卖家上传了商品照片，请一次回答三个问题。");
+        prompt.AppendLine("你是一个校园二手交易平台的发布助手。卖家上传了商品照片，请照着照片把商品信息补全。");
         prompt.AppendLine();
         prompt.AppendLine("只输出一个 JSON 对象，不要输出任何解释文字，不要用 markdown 代码围栏。结构必须是：");
         prompt.AppendLine();
         prompt.AppendLine("{");
         prompt.AppendLine("  \"flagged\": false,");
         prompt.AppendLine("  \"reason\": \"\",");
+        prompt.AppendLine("  \"title\": \"\",");
         prompt.AppendLine("  \"priceLow\": 0,");
         prompt.AppendLine("  \"priceHigh\": 0,");
         prompt.AppendLine("  \"description\": \"\"");
@@ -264,6 +269,9 @@ internal sealed class ListingAssistant(
         prompt.AppendLine("字段说明：");
         prompt.AppendLine("- flagged：布尔值。照片里有没有色情、暴力、恐怖或政治敏感的内容。");
         prompt.AppendLine("- reason：字符串。flagged 为 true 时用一句话说明是什么；否则填空字符串。");
+        prompt.AppendLine("- title：字符串。一个可以直接当商品标题用的中文短句，20 个字以内、最多 100 个字，");
+        prompt.AppendLine("  说清楚是什么东西，带上成色或者最值得说的那个卖点。不要加引号、不加书名号、");
+        prompt.AppendLine("  不写「闲置出售」这类没信息量的词。");
         prompt.AppendLine("- priceLow、priceHigh：数字（不是字符串），单位元，人民币。建议价格区间的下限和上限。");
         prompt.AppendLine("- description：字符串。一段可以直接使用的中文商品描述，120 到 250 字，");
         prompt.AppendLine("  用卖家的口吻写，包含成色、用途、可能的小瑕疵和希望的交易方式。");
@@ -272,7 +280,8 @@ internal sealed class ListingAssistant(
         prompt.AppendLine("判断规则：");
         prompt.AppendLine("- 普通的学习用品、电子产品、生活用品、衣物、书籍都不算违规。");
         prompt.AppendLine("- 拿不准是什么东西的时候，判 flagged = false。");
-        prompt.AppendLine("- 照片看不清商品时，description 就照着卖家填的标题写，不要瞎猜。");
+        prompt.AppendLine("- 照片看不清商品时，title 和 description 就照着卖家填的标题写，不要瞎猜。");
+        prompt.AppendLine("- 卖家自己填了标题也照样给 title：你看过照片，按你看到的给一个更好的。");
         prompt.AppendLine();
         prompt.AppendLine("卖家填的信息：");
         prompt.AppendLine($"- 标题：{TitleFor(title)}");
@@ -318,6 +327,10 @@ internal sealed class ListingAssistant(
     /// The form caps the field at 100 characters, but this endpoint does not go through the form, and
     /// an unbounded title would be pasted into every prompt verbatim. Matching the form's own limit
     /// means the assistant never sees a title the seller could not actually have saved.
+    /// <para>
+    /// An empty one is spelled out rather than left blank, because the model is being asked to produce
+    /// a title and a bare <c>- 标题：</c> reads like a field it is meant to ignore.
+    /// </para>
     /// </remarks>
     private static string TitleFor(string? title)
     {
@@ -325,10 +338,10 @@ internal sealed class ListingAssistant(
 
         if (string.IsNullOrEmpty(trimmed))
         {
-            return "（还没填）";
+            return "（还没填，请你在 title 里给一个）";
         }
 
-        return trimmed.Length <= 100 ? trimmed : trimmed[..100];
+        return trimmed.Length <= MaxTitleChars ? trimmed : trimmed[..MaxTitleChars];
     }
 
     private static string ConditionName(ProductCondition condition) => condition switch
@@ -372,20 +385,19 @@ internal sealed class ListingAssistant(
     }
 
     /// <summary>
-    /// Trims the description, and cuts it to what the listing form will accept.
+    /// Trims a model-written field, and cuts it to the length the listing form itself accepts.
     /// </summary>
     /// <remarks>
-    /// The prompt asks for 120 to 250 characters; a model that ignores that and writes two thousand
-    /// and fifty would produce text the seller cannot save, which reads as the assistant being broken
-    /// rather than verbose. Cutting is the smaller surprise.
+    /// The prompt states the length it wants; a model that ignores that would produce text the seller
+    /// cannot save, which reads as the assistant being broken rather than verbose. Cutting to the
+    /// form's own limit is the smaller surprise, and it is the same limit in both cases — the
+    /// <c>maxlength</c> on the input and the <c>StringLength</c> on the request that stores it.
     /// </remarks>
-    private static string? TrimDescription(string? description)
+    private static string? TrimToLimit(string? value, int max)
     {
-        var trimmed = Trim(description);
+        var trimmed = Trim(value);
 
-        return trimmed is null || trimmed.Length <= MaxDescriptionChars
-            ? trimmed
-            : trimmed[..MaxDescriptionChars];
+        return trimmed is null || trimmed.Length <= max ? trimmed : trimmed[..max];
     }
 
     /// <summary>
@@ -498,6 +510,8 @@ internal sealed class ListingAssistant(
         public bool Flagged { get; init; }
 
         public string? Reason { get; init; }
+
+        public string? Title { get; init; }
 
         public decimal? PriceLow { get; init; }
 

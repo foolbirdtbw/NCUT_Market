@@ -37,17 +37,30 @@ internal sealed class FakeAiChatClient : IAiChatClient
     /// </summary>
     public const string LeakMarker = "UPSTREAM-ANSWER-MUST-NOT-BE-ECHOED";
 
+    /// <summary>A title marker meaning "answer with a title longer than the form will accept".</summary>
+    public const string LongTitleMarker = "LONGTITLE";
+
+    /// <summary>How long that title is. Comfortably past the form's 100-character ceiling.</summary>
+    public const int LongTitleLength = 150;
+
     private const string NormalAnswer =
         """
-        {"flagged":false,"reason":"","priceLow":120,"priceHigh":180,
+        {"flagged":false,"reason":"","title":"宿舍台灯 九成新 三档调光",
+         "priceLow":120,"priceHigh":180,
          "description":"宿舍闲置的台灯，九成新，用了一个学期，三档亮度都正常，灯罩没有划痕。晚上看书够亮，也不占地方。西区宿舍楼下自取，可以帮忙送到校门口。"}
         """;
 
     private const string FlaggedAnswer =
         """
-        {"flagged":true,"reason":"照片里出现了疑似违规的画面","priceLow":0,"priceHigh":0,
+        {"flagged":true,"reason":"照片里出现了疑似违规的画面","title":"待确认的商品",
+         "priceLow":0,"priceHigh":0,
          "description":"这是一段仍然可以用的描述——判定违规并不影响卖家继续编辑和发布。"}
         """;
+
+    /* 长度由代码算出来，不是手打的一百五十个字：手打的数不清，而这条测试的全部意义
+     * 就是那个长度。 */
+    private static readonly string LongTitleAnswer = string.Concat(
+        "{\"title\":\"", new string('标', LongTitleLength), "\",\"description\":\"还是给一段描述。\"}");
 
     private readonly ConcurrentQueue<string> _prompts = new();
     private readonly ConcurrentQueue<string> _keys = new();
@@ -70,9 +83,11 @@ internal sealed class FakeAiChatClient : IAiChatClient
 
         var answer = prompt.Contains(BrokenAnswerMarker, StringComparison.Ordinal)
             ? $"抱歉，我不太明白。{LeakMarker}"
-            : prompt.Contains(FlaggedMarker, StringComparison.Ordinal)
-                ? FlaggedAnswer
-                : NormalAnswer;
+            : prompt.Contains(LongTitleMarker, StringComparison.Ordinal)
+                ? LongTitleAnswer
+                : prompt.Contains(FlaggedMarker, StringComparison.Ordinal)
+                    ? FlaggedAnswer
+                    : NormalAnswer;
 
         return Task.FromResult<string?>(answer);
     }
