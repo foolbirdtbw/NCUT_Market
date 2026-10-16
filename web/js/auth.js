@@ -148,10 +148,17 @@ window.auth = (function ($) {
 
   /* ---------- 登录 ---------- */
 
-  function showLogin() {
+  /* query.deleted 是注销成功后落过来的标记（products.js 的 deleteAccount）。
+   * 用 muted 的一段话，不用 NM.inlineError：那个是红色 .form-error 的框，是给失败用的，
+   * 而注销成功不是失败——把它染红会让人以为出了错、以为账号还在。 */
+  function showLogin(query) {
     $("#view").html(
       '<div class="card form-card">' +
       '<h1>登录</h1>' +
+      (query && query.deleted
+        ? '<p class="muted">账号已经注销，学号和昵称都清掉了。这个用户名登不回来了；想再用，' +
+          '拿原来的学号重新注册一个就行。</p>'
+        : '') +
       '<form id="login-form" novalidate>' +
       '<div class="field-stack">' +
       '<label for="login-username">用户名</label>' +
@@ -212,8 +219,16 @@ window.auth = (function ($) {
       '<div class="field-stack">' +
       '<label for="register-student-id">学号</label>' +
       '<input type="text" id="register-student-id" inputmode="numeric" required>' +
-      '<span class="hint">忘了密码要靠它认人，注册后不能改。</span>' +
+      '<span class="hint">13 位数字。站里没有邮箱和手机号，忘了密码时只能靠它确认是你本人，注册后不能改。</span>' +
       '</div>' +
+      /* 这段话是照着代码写的，不是照着"听起来让人放心"写的：学号在库里就是明文
+       * （users.student_id），管理员要按它搜人、发重置码，所以哈希不了；它也确实
+       * 只出现在管理员的用户管理页，普通接口一个字段都不返回；账号确实从不物理
+       * 删除，注销也只是停用加抹掉身份。所以这里只承诺这几件真做得到的事——一句
+       * 做不到的隐私承诺，恰好会让正在犹豫要不要填的人彻底不信。 */
+      '<p class="hint register-privacy">本站只面向本校学生。学号只用于找回密码——站里没有邮箱和手机号，' +
+      '管理员只能靠它确认是你本人。它不会出现在你的主页、商品页或任何别人看得到的地方，' +
+      '不会用于营销，也不会提供给第三方。不想用了，登录后在个人主页里自己注销就行。</p>' +
       '<div class="field-stack">' +
       '<label for="register-password">密码</label>' +
       '<input type="password" id="register-password" autocomplete="new-password" required>' +

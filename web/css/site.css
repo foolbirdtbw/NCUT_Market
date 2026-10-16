@@ -661,6 +661,16 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
 .hint { color: var(--muted); font-size: 12px; }
 
+/* 注册页学号下面那段说明。它和 .hint 同样小、同样灰（刻意不做得更响——注册页上
+   一块醒目的隐私声明，看着就像在遮掩什么），但多一条左边框，把"这是我们在说明
+   我们会怎么做"和"这是这个输入框的格式要求"分开。 */
+.register-privacy {
+  margin: 0 0 12px;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  line-height: 1.7;
+}
+
 /* 用标题生成的那张封面的预览。不设宽度的话 800x800 的原图会按原始尺寸铺开，
    在表单里是一整屏。 */
 .cover-preview {
@@ -1131,6 +1141,18 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 .feedback-body { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
 
 .feedback-actions { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+
+/* ---------- 个人主页 ---------- */
+
+/* 账号卡里「注销账号」那一节。刻意和上面的退出登录拉开距离并加一条横线：
+   这两件事在界面上长得像，后果却差一个量级——退出登录下一步就能登回来，
+   注销登不回来。按钮本身没有外边距（见 .button），不划线的话这个标题会
+   紧贴在上面那个按钮底下。 */
+.account-danger {
+  margin: 20px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
 
 /* ---------- 用户管理页 ---------- */
 

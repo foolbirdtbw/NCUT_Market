@@ -21,7 +21,8 @@
     [/^\/notifications$/, function (match, query) { notifications.showList(query); }],
     [/^\/announcements$/, function (match, query) { announcements.showList(query); }],
     [/^\/feedback$/, function (match, query) { feedback.showList(query); }],
-    [/^\/login$/, function () { auth.showLogin(); }],
+    // query 要传下去：注销成功后会落到 #/login?deleted=1，那行提示就挂在 query 上。
+    [/^\/login$/, function (match, query) { auth.showLogin(query); }],
     [/^\/register$/, function () { auth.showRegister(); }],
     [/^\/forgot$/, function () { auth.showForgot(); }],
     // 分类不分页，没有 query 可传。
@@ -223,6 +224,9 @@
       auth.signOut();
       location.hash = "#/products";
     })
+    /* 注销不在这里 signOut：成功之后要落 #/login?deleted=1 并且清登录态，两件事的先后
+     * 是有讲究的，都写在 products.deleteAccount 里。 */
+    .on("click", "[data-action='delete-account']", function () { products.deleteAccount(); })
     .on("click", "[data-action='publish']", function () { products.transition("publish"); })
     .on("click", "[data-action='offline']", function () { products.transition("offline"); })
     .on("click", "[data-action='sold']", function () { products.transition("sold"); })

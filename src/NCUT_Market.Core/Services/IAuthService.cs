@@ -4,8 +4,8 @@ using NCUT_Market.Core.DTOs.Auth;
 namespace NCUT_Market.Core.Services;
 
 /// <summary>
-/// Account registration, login, and lookup. Read-only with respect to everything except the
-/// <c>users</c> table.
+/// Account registration, login, lookup, and deletion. Read-only with respect to everything except the
+/// <c>users</c> table and — during deletion only — the caller's own <c>products</c> rows.
 /// </summary>
 /// <remarks>
 /// Expected failures — a taken username, a wrong password, a disabled account — travel as
@@ -73,6 +73,42 @@ public interface IAuthService
     /// no longer resolves.
     /// </returns>
     Task<OperationResult<CurrentUserResponse>> GetByIdAsync(
+        long userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Closes the caller's own account: disables it, wipes the fields that identify the person, and
+    /// takes their published listings down.
+    /// </summary>
+    /// <param name="userId">The id carried in the token's subject claim. A caller may only delete itself.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <returns>
+    /// True on success; <see cref="ErrorCodes.NotFound"/> if there is no such row. Deleting twice is
+    /// not an error and still succeeds — see the remarks.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Not a physical delete, and that is not a shortcut.</b> Nine foreign keys point at
+    /// <c>users</c> and every one of them is RESTRICT. The rows behind several of them — conversations,
+    /// messages, the trade columns on a sold listing — belong to the other party as much as to the
+    /// person leaving, so deleting the account cannot be allowed to take them along. What "deletion"
+    /// means here is that the row stops identifying anyone: nickname, student number, username and
+    /// avatar are wiped, the password is replaced with a value nobody holds, any outstanding reset
+    /// code is cleared, and the account is disabled.
+    /// </para>
+    /// <para>
+    /// Wiping <c>nickname</c> is what anonymizes the rest of the site at a stroke: every public surface
+    /// renders the nickname rather than the username, so listings, threads, messages and feedback all
+    /// begin reading "已注销用户". The student number is nulled rather than scrambled, which is what
+    /// lets the same person register again later — the unique index treats NULLs as distinct.
+    /// </para>
+    /// <para>
+    /// <b>Idempotent on purpose.</b> A token issued before deletion keeps working on ordinary member
+    /// endpoints for the rest of its week (see README's 已知边界), so a second call is reachable and
+    /// must succeed rather than report that the account is gone.
+    /// </para>
+    /// </remarks>
+    Task<OperationResult<bool>> DeleteAsync(
         long userId,
         CancellationToken cancellationToken = default);
 }

@@ -9,8 +9,8 @@ using NCUT_Market.Core.Services;
 namespace NCUT_Market.Api.Controllers;
 
 /// <summary>
-/// Registration and sign-in. Unauthenticated except for <see cref="Me"/>, which is the endpoint a
-/// client uses to find out whether the token it is holding is still good.
+/// Registration, sign-in, and closing an account. Unauthenticated except for <see cref="Me"/> and
+/// <see cref="DeleteMe"/>, the two that act on the token's own account.
 /// </summary>
 [ApiController]
 [Route("api/auth")]
@@ -129,6 +129,41 @@ public sealed class AuthController(IAuthService authService) : ControllerBase
 
         return result.Succeeded
             ? Ok(result.Value)
+            : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
+    }
+
+    /// <summary>Closes the account the request's token belongs to.</summary>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="204">The account is closed.</response>
+    /// <response code="401">No token, or one that is expired or not signed by this API.</response>
+    /// <response code="404">The token is valid but there is no such account.</response>
+    /// <remarks>
+    /// <para>
+    /// No body, and no password to re-enter: the token already says whose account this is. A DELETE
+    /// rather than a POST because there is nothing for the caller to say, and because every other
+    /// successful delete in this API answers 204.
+    /// </para>
+    /// <para>
+    /// This is not a physical delete. It disables the account and clears what identifies the person;
+    /// the listings, threads and messages the account took part in stay, because they are the other
+    /// party's record too. See <c>IAuthService.DeleteAsync</c> for what is written and why.
+    /// </para>
+    /// <para>
+    /// Calling it twice succeeds. A token issued before deletion keeps working on ordinary member
+    /// endpoints for the rest of its week, so a second call is reachable and is not an error.
+    /// </para>
+    /// </remarks>
+    [HttpDelete("me")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteMe(CancellationToken cancellationToken)
+    {
+        var result = await authService.DeleteAsync(User.GetUserId(), cancellationToken);
+
+        return result.Succeeded
+            ? NoContent()
             : ProblemResults.Failure(this, result.ErrorCode, result.ErrorMessage!);
     }
 }

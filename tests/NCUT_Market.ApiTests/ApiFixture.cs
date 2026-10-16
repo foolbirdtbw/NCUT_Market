@@ -493,6 +493,33 @@ public sealed class ApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     }
 
     /// <summary>
+    /// An account's identity columns, read straight from the database.
+    /// </summary>
+    /// <param name="userId">The account to read.</param>
+    /// <remarks>
+    /// Every writer in this class can only change a row, never report one, so nothing here could assert
+    /// what a write actually landed. Needed in particular for deletion: the endpoint answers 204 with no
+    /// body, and the whole claim being tested — that the row stopped identifying anyone — is invisible
+    /// from outside. Read through a fresh scope and <c>AsNoTracking</c> so it reflects what was committed
+    /// rather than what the API's own context happens to be tracking.
+    /// </remarks>
+    public async Task<(string Username, string Nickname, string? StudentId, UserStatus Status)>
+        UserStateAsync(long userId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var user = await dbContext.Users
+            .AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => new { x.Username, x.Nickname, x.StudentId, x.Status })
+            .FirstAsync();
+
+        return (user.Username, user.Nickname, user.StudentId, user.Status);
+    }
+
+    /// <summary>
     /// Moves an account's outstanding reset code into the past, so a 24-hour lifetime can be crossed
     /// without waiting a day.
     /// </summary>

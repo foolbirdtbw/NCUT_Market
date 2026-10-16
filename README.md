@@ -118,9 +118,9 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 |---|---|
 | `UserRole.User = 1` | 发布商品、私信、交易 |
 | `UserRole.Admin = 2` | 额外的：公告发布/删除、分类增删改、宿舍区增删改、搜用户、发密码重置码、标记反馈状态/删反馈 |
-| `UserStatus.Active = 1` / `Disabled = 2` | **用户从不物理删除**，停用是唯一的移除方式（所有指向 `users` 的外键都是 `RESTRICT`） |
+| `UserStatus.Active = 1` / `Disabled = 2` | **用户从不物理删除**，停用是唯一的移除方式（所有指向 `users` 的外键都是 `RESTRICT`）；自助注销走的也是这个状态 |
 
-角色**不从 JWT 里读**，每次管理操作都回数据库查 `role == Admin && status == Active`（`IsAdminAsync`）。所以手工提权下一条请求就生效，不用重新登录。停用账号被挡在登录、重置密码、`GET /api/auth/me` 和管理操作之外——注意这里有个已知的缝：**停用之前签发的 token 在普通会员接口上照旧管用**，那些路径不复查状态。
+角色**不从 JWT 里读**，每次管理操作都回数据库查 `role == Admin && status == Active`（`IsAdminAsync`）。所以手工提权下一条请求就生效，不用重新登录。停用账号被挡在登录、重置密码、`GET /api/auth/me` 和管理操作之外——注意这里有个已知的缝：**停用之前签发的 token 在普通会员接口上照旧管用**，那些路径不复查状态。这条缝同样适用于用户自己注销掉的账号（见「认证」末段）。
 
 **私信没有管理员后门**，这是有意的：读别人的私信不是管理员该有的权力。非参与方拿到的是 404 而不是 403，这样连「这个会话存不存在」都不会泄露。
 
@@ -133,6 +133,14 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 **JWT** 是 HS256，密钥来自 `Jwt__SigningKey`，**没有默认值**——缺了直接拒绝启动。Claims 只有 `sub`（用户 id）、`unique_name`（用户名）、`jti`（随机 GUID），**没有角色 claim**（见上，角色每次回库查）。有效期 **7 天**，没有 refresh 流程。
 
 **忘记密码走得是「管理员发码」，不是自助重置。**管理员在用户管理页对一个账号发一个 **8 位**一次性码（字母表去掉了 `I`/`O`/`0`/`1`，显示成 `XXXX-XXXX`），库里存的是**无盐 SHA-256 摘要**，明文只在发码的响应里出现一次。有效期 **24 小时**，重新发码会作废上一个。用户在匿名接口 `POST /api/auth/reset-password` 用它换新密码，比码用 `FixedTimeEquals`；用户不存在、没发过码、码不对、码过期**四种情况返回同一句话**，同样是不给探测信号。成功之后码被清掉（用一次即焚）。
+
+**注销是自助的**（`DELETE /api/auth/me`，需登录，返回 204，无 body）。**它不是物理删除**：九个外键指向 `users` 且全是 `RESTRICT`，会话、私信、通知、反馈都属于对方和发布者两个人，删账号不能把它们一起带走。能做的只有让这一行不再指向任何人——`student_id` 置空、`username` 改成 `deleted_{id}`（撞车时加随机后缀，先查后写，避开不可逆动作上的 409）、`nickname` 改成「已注销用户」、`avatar_key` 清空、未用的重置码清空、密码换成一个谁也持有不了的随机值的哈希，`status` 置 `Disabled`。
+
+改 `nickname` 这一行就是全站匿名化的全部：公开面渲染的一律是昵称而不是用户名，所以商品、帖子、私信、反馈同时开始显示「已注销用户」。`student_id` 是置空而不是打乱——MySQL 的唯一索引把 NULL 当互不相同，这正是同一个人以后能用同一个学号重新注册的原因。密码换掉之后管理员也交不回这个账号：把 `status` 改回 `Active` 也登不进去，也没有码可以换密码。
+
+同一个 `SaveChangesAsync` 里把该账号**在售**的商品改成 `Offline`（走变更跟踪器而不是 `ExecuteUpdateAsync`，保证审计戳和并发令牌和其它写入同一套规则）。`InTransaction` 的商品**刻意不动**：交易清扫的每个阶段都按这个状态过滤，`ConfirmOnceAsync` 也只认它，改成 `Offline` 会把 `TransactionBuyerId` 永久卡在一行没有任何阶段会再碰的记录上。草稿也不动——`Jobs/` 里只有 `TransactionSweepJob`，清理草稿那个扫描从来没写过。批量下架绕过了 `ProductService.OfflineAsync` 的「有人正在跟你谈」保护，这是有意的：那条保护拦的是活着的卖家把商品抽走，注销掉的账号谈不了。
+
+重复调用返回 **204**，不是 404：注销前签发的 token 在普通会员接口上还能用满 7 天（见「已知边界」），所以第二次是够得着的。
 
 ### 商品状态机
 
@@ -280,11 +288,11 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 
 ## HTTP 接口
 
-54 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
+55 个控制器端点，前缀一律 `api/` + 复数 kebab-case 资源名。`{id:long}` 带内联路由约束，所以 `mine`、`bought`、`unread-count` 这种字面量段永远不会被当成 id。
 
 | 资源 | 端点 |
 |---|---|
-| `api/auth` | `POST register`、`POST login`、`POST reset-password` 匿名；`GET me` 需登录 |
+| `api/auth` | `POST register`、`POST login`、`POST reset-password` 匿名；`GET me`、`DELETE me` 需登录 |
 | `api/products` | `GET`（匿名，带筛选排序）、`GET {id}`（匿名，草稿只有卖家看得见）、`GET mine`、`GET bought`；`POST`、`PUT {id}`、`POST {id}/publish`、`POST {id}/offline`、`POST {id}/sold`、`DELETE {id}`、`POST {id}/images`、`DELETE {id}/images/{imageId}` 需登录且校验归属 |
 | `api/conversations` | `GET`、`GET unread-count`、`POST`、`GET {id}`、`POST {id}/messages`、`POST {id}/read`、`DELETE {id}`、`POST {id}/transaction`、`.../transaction/accept`、`.../cancel`、`.../receipt`、`.../payment`——全需登录，且**非参与方 404**。`DELETE` 只删调用者这一侧，交易进行中回 409 |
 | `api/notifications` | `GET`、`GET unread-count`、`POST {id}/read`、`DELETE {id}`、`DELETE product/{productId}`——后一个是**整组删**（一个商品的通知），幂等：匹配不到也算成功 |
@@ -395,7 +403,7 @@ node out/check-frontend.js
 
 - **手标售出的买家不可表示。**卖家在详情页点「标记已售出」时没有对手方可以记，所以那笔交易的买家在库里根本不存在，永远进不了「我买到的」。要修得让卖家标记时从自己的会话里挑一个买家——那等于把两条路合并成一条，是个产品决定，不是 bug fix。
 - **草稿清理没实现。**`last_activity_at` 这个时钟已经在走了，删草稿的那个任务还没写。`NotificationType.DraftDeleted = 1` 是为它留的坑。
-- **停用账号的既有 token 还有效。**`[Authorize]` 只验签名和有效期，普通会员接口不复查 `status`。要堵得在每个请求上回库查一次，代价是每请求一次查询。当前只在登录、重置密码、`/api/auth/me` 和管理操作上复查。
+- **停用账号的既有 token 还有效。**`[Authorize]` 只验签名和有效期，普通会员接口不复查 `status`。要堵得在每个请求上回库查一次，代价是每请求一次查询。当前只在登录、重置密码、`/api/auth/me` 和管理操作上复查。**这一条明确覆盖用户自己注销掉的账号**：`DELETE /api/auth/me` 之后，那个 token 在商品、私信、通知这些接口上还能用满 7 天，只是做什么都署着「已注销用户」。这是选定的取舍（堵它要在心跳中间件里每请求多查一次库），也是 `DELETE /api/auth/me` 必须幂等——第二次调用返回 204 而不是 404——的原因。
 - **没有 refresh token。**签一次 7 天，过期重新登录。
 - **没有 API 版本化。**`/api/**` 就是当前版本。
 - **不存原图。**每张图只留 1280 / 640 / 320 三个重新编码过的尺寸，源字节从不落盘。这是隐私上的好事，但也意味着「重新裁一次缩略图」得让用户重传。

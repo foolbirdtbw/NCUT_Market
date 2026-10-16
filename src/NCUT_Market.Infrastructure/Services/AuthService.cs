@@ -25,6 +25,11 @@ internal sealed class AuthService(
     /// </summary>
     private const string BadResetCodeMessage = "重置码不对，或者已经过期了。";
 
+    /// <summary>
+    /// What a closed account is called from then on, everywhere it is displayed.
+    /// </summary>
+    private const string DeletedNickname = "已注销用户";
+
     public async Task<OperationResult<AuthResponse>> RegisterAsync(
         RegisterRequest request,
         CancellationToken cancellationToken = default)
@@ -181,6 +186,122 @@ internal sealed class AuthService(
                 ErrorCodes.NotFound,
                 "找不到这个用户。")
             : OperationResult<CurrentUserResponse>.Success(user);
+    }
+
+    public async Task<OperationResult<bool>> DeleteAsync(
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        // By id alone, with no status filter. A token issued before the account was closed keeps
+        // working on ordinary member endpoints for the rest of its week, so this method is reachable a
+        // second time; filtering on Active would turn that into a 404 on a row that is still there.
+        var user = await dbContext.Users
+            .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            return OperationResult<bool>.Failure(ErrorCodes.NotFound, "找不到这个用户。");
+        }
+
+        user.Status = UserStatus.Disabled;
+
+        // Nulled rather than scrambled: MySQL treats NULLs as distinct in a unique index, so this is
+        // what leaves the number free for the same person to register with again.
+        user.StudentId = null;
+
+        user.Username = await ReserveDeletedUsernameAsync(user.Id, cancellationToken);
+
+        // This single line is what anonymizes the rest of the site. Every public surface renders the
+        // nickname and never the username — listings, threads, messages, feedback — so they all start
+        // reading 已注销用户 at once.
+        user.Nickname = DeletedNickname;
+        user.AvatarKey = null;
+
+        // Cleared as a pair, and not because a disabled account could redeem one — CompleteResetAsync
+        // refuses those. It is because an administrator flipping Status back to Active would otherwise
+        // resurrect a code that still works.
+        user.PasswordResetCode = null;
+        user.PasswordResetExpiresAt = null;
+
+        // A value nobody holds, hashed through the same hasher a real password goes through. This is
+        // what makes the deletion final: an administrator can put Status back, but there is no password
+        // to sign in with and no code to mint one from, so the account cannot be handed back.
+        user.PasswordHash = passwordHasher.HashPassword(user, Guid.NewGuid().ToString("N"));
+
+        // LastSeenAt is deliberately left alone. The heartbeat middleware in Program.cs has already
+        // stamped it to now on this very request, and OnlineService counts only Active accounts, so the
+        // row has stopped counting towards the online figure regardless.
+
+        await OfflinePublishedAsync(user.Id, cancellationToken);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return OperationResult<bool>.Success(true);
+    }
+
+    /// <summary>
+    /// Picks a replacement username no other account holds.
+    /// </summary>
+    /// <remarks>
+    /// The row has to keep a non-null, unique username, so the original cannot simply be blanked out —
+    /// but registration validates only the length, which means somebody may already hold the literal
+    /// <c>deleted_7</c>. Colliding there would come back as a 409 from the unique index, and an
+    /// irreversible action is the worst place to fail, so the name is checked first exactly the way
+    /// <see cref="RegisterAsync"/> checks before inserting. The self-exclusion is load-bearing: without
+    /// it, a second delete would read the row's own replacement as a collision and append a suffix
+    /// again, and again.
+    /// </remarks>
+    private async Task<string> ReserveDeletedUsernameAsync(long userId, CancellationToken cancellationToken)
+    {
+        var candidate = $"deleted_{userId}";
+
+        var taken = await dbContext.Users
+            .AnyAsync(x => x.Id != userId && x.Username == candidate, cancellationToken);
+
+        return taken ? $"{candidate}_{Random.Shared.Next(0, 1_000_000):D6}" : candidate;
+    }
+
+    /// <summary>
+    /// Takes the account's live listings down and leaves every other status alone.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Loaded and mutated through the change tracker rather than with a bulk UPDATE. Deletion is not a
+    /// hot path, and this way the audit stamp and the concurrency token are applied by the same rule as
+    /// every other write in the codebase — which is the whole point of the bulk-update rule that
+    /// <c>AppDbContext</c> states and <c>OnlineService</c> exists to satisfy.
+    /// </para>
+    /// <para>
+    /// <see cref="ProductStatus.InTransaction"/> is left alone on purpose. Every phase of the trade
+    /// sweep filters on that status and <c>ConfirmOnceAsync</c> refuses anything else, so forcing one to
+    /// Offline would strand <c>TransactionBuyerId</c> on a row no sweep will ever look at again and take
+    /// the confirm buttons away from both parties. Left as it is, the day-long sweep settles or rolls it
+    /// back by itself.
+    /// </para>
+    /// <para>
+    /// This skips the "somebody is negotiating with you" guard in <c>ProductService.OfflineAsync</c>,
+    /// deliberately. That guard stops a live seller pulling a listing out from under a negotiation, and
+    /// a closed account cannot negotiate. Any proposal left hanging is cleared by
+    /// <c>ExpireProposalsAsync</c> a day later.
+    /// </para>
+    /// <para>
+    /// Drafts are left as drafts. There is no cleanup job for them — the scan
+    /// <c>idx_products_status_last_activity_at</c> was added to drive was never written — so a closed
+    /// account's drafts stay in the table. They are visible to nobody but their former owner, who can no
+    /// longer sign in, so leaving them costs nothing today.
+    /// </para>
+    /// </remarks>
+    private async Task OfflinePublishedAsync(long userId, CancellationToken cancellationToken)
+    {
+        var listings = await dbContext.Products
+            .Where(x => x.SellerId == userId && x.Status == ProductStatus.Published)
+            .ToListAsync(cancellationToken);
+
+        foreach (var listing in listings)
+        {
+            listing.Status = ProductStatus.Offline;
+            listing.LastActivityAt = AppDbContext.AuditNow;
+        }
     }
 
     /// <summary>

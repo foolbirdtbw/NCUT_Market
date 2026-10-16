@@ -1196,6 +1196,16 @@ window.products = (function ($) {
       '<h2>账号</h2>' +
       '<p class="muted">退出之后要重新登录，才能发布商品、发私信。</p>' +
       '<button type="button" class="button" data-action="sign-out">退出登录</button>' +
+      /* 注销另起一节，不与退出登录并排，中间还有一条横线（.account-danger）。这两件事在界面上
+       * 长得像，后果却差一个量级：退出登录下一步就能登回来，注销登不回来。
+       *
+       * 说明里把「什么会留下」也写了。只讲什么会被清掉，等于让人以为注销是"把我说过的话也一并
+       * 抹掉"，而聊天记录是对方的，服务端一条都不会动——**事先说清楚比事后解释便宜**。 */
+      '<h3 class="account-danger">注销账号</h3>' +
+      '<p class="muted">注销之后，学号、昵称和头像会被清除，在售的商品会下架，这个账号再也登不回来，' +
+      '管理员也恢复不了。和别人的聊天记录会留在对方那边，那是对方的东西，删不掉。</p>' +
+      '<div id="delete-account-error"></div>' +
+      '<button type="button" class="button button-danger" data-action="delete-account">注销账号</button>' +
       '</div>');
 
     api.get("/api/products/mine", {
@@ -1221,6 +1231,38 @@ window.products = (function ($) {
     });
   }
 
+  /* 注销自己的账号。服务端只停用并抹掉身份，不物理删除——见 IAuthService.DeleteAsync。
+   *
+   * 确认用原生 confirm()，和全站其它删除动作一致：这个仓库没有模态框组件，为一个按钮
+   * 引进一套不值得。文案分条写，因为它要同时说清"做什么"和"做完回不去"。
+   *
+   * 成功后落 #/login?deleted=1 而不是像退出登录那样落 #/products：全站没有任何 toast
+   * 或成功提示机制，跳到商品列表什么信号都不给，人会以为没点着，再去点一次。登录页
+   * 那行提示是唯一不用新造一套机制的落点，用的也是全站都在用的 hash query 约定。 */
+  function deleteAccount() {
+    var question = "注销之后：\n" +
+      "· 学号、昵称、头像会被清除\n" +
+      "· 在售的商品会下架\n" +
+      "· 这个账号再也登不回来，管理员也恢复不了\n" +
+      "和别人的聊天记录会留在对方那边。\n\n" +
+      "确定注销吗？";
+
+    if (!confirm(question)) {
+      return;
+    }
+
+    $("#delete-account-error").empty();
+
+    api.del("/api/auth/me").then(function () {
+      /* 先清本地登录态再改 hash。反过来的话，跳到登录页时会短暂地还是"已登录"状态，
+       * 顶栏那块要等这一次请求的 paint() 才更新，中间会闪一下昵称。 */
+      auth.signOut();
+      location.hash = "#/login?deleted=1";
+    }, function (error) {
+      $("#delete-account-error").html(NM.inlineError(error));
+    });
+  }
+
   return {
     showList: showList,
     submitSearch: submitSearch,
@@ -1230,6 +1272,7 @@ window.products = (function ($) {
     showEdit: showEdit,
     submitEdit: submitEdit,
     showMine: showMine,
+    deleteAccount: deleteAccount,
     transition: transition,
     deleteProduct: deleteProduct,
     uploadImage: uploadImage,
