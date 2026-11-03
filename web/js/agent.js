@@ -232,6 +232,25 @@ window.agent = (function ($) {
     log.scrollTop(log[0].scrollHeight);
   }
 
+  /* 搜索命中的商品，接在回答气泡下面。链接是这里拼的：服务端只给 id 和标题，
+   * 模型看不到 id，所以这一行永远指向一件真在卖的东西。 */
+  function appendResults(results) {
+    if (!results || !results.length) {
+      return;
+    }
+
+    var log = $("#agent-log");
+    var parts = [];
+
+    results.forEach(function (item) {
+      parts.push('<a class="agent-hint agent-result" href="#/products/' + NM.esc(item.id) + '">' +
+        NM.esc(item.title) + ' ' + NM.esc(NM.formatPrice(item.price)) + '</a>');
+    });
+
+    log.append('<div class="agent-results">' + parts.join("") + '</div>');
+    log.scrollTop(log[0].scrollHeight);
+  }
+
   function ask() {
     if (state.busy) {
       return;
@@ -264,6 +283,7 @@ window.agent = (function ($) {
       history: trimHistory(state.history)
     }).then(function (result) {
       appendBubble("assistant", result.answer);
+      appendResults(result.results);
 
       /* 成功才进历史。失败的这一问没答上来，把它记进上下文只会让下一问对着一句
        * 没人回的话发愣。 */

@@ -48,7 +48,20 @@ public sealed record AgentAskRequest(
     long? ProductId,
     IReadOnlyList<AgentTurn>? History);
 
-/// <summary>The model's answer, trimmed to something that fits in the panel.</summary>
+/// <summary>One listing a search turned up: enough to link to it and show a price.</summary>
+/// <param name="Id">Primary key; the client builds <c>#/products/{id}</c> from it.</param>
+/// <param name="Title">The listing's title, as stored.</param>
+/// <param name="Price">In yuan.</param>
+public sealed record AgentProductResult(long Id, string Title, decimal Price);
+
+/// <summary>The model's answer, plus any listings a search turned up.</summary>
 /// <param name="Answer">Plain text. Never markdown, never more than a few sentences.</param>
 /// <param name="RemainingToday">Shared-key calls left today, after this one.</param>
-public sealed record AgentAnswerResponse(string Answer, int? RemainingToday);
+/// <param name="Results">
+/// Empty when no search ran. The model never sees these ids — the list is built by the server from
+/// the real query, and the client turns it into links, so a hallucinated listing cannot appear here.
+/// </param>
+public sealed record AgentAnswerResponse(
+    string Answer,
+    int? RemainingToday,
+    IReadOnlyList<AgentProductResult> Results);

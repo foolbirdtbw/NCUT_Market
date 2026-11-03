@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NCUT_Market.Core.Common;
 using NCUT_Market.Core.DTOs.Ai;
+using NCUT_Market.Core.DTOs.Products;
 using NCUT_Market.Core.Enums;
 using NCUT_Market.Core.Services;
 using NCUT_Market.Infrastructure.Persistence;
@@ -32,6 +34,7 @@ internal sealed class AgentAssistant(
     AppDbContext dbContext,
     IConversationService conversations,
     INotificationService notifications,
+    IProductService productService,
     IAiChatClient chatClient,
     AiQuota quota,
     IOptions<AiOptions> options,
@@ -54,6 +57,11 @@ internal sealed class AgentAssistant(
 
     /// <summary>Minimum same-category listings before an average is worth stating.</summary>
     private const int MinComparables = 3;
+
+    /// <summary>How many listings a search hands back. A bubble in a corner, not a results page.</summary>
+    private const int MaxSearchResults = 5;
+
+    private static readonly JsonSerializerOptions IntentFormat = new(JsonSerializerDefaults.Web);
 
     private static readonly Regex BlankRun = new(@"\n{3,}", RegexOptions.Compiled);
 
@@ -110,11 +118,28 @@ internal sealed class AgentAssistant(
         var context = await BuildContextAsync(userId, request.Page, request.ProductId, cancellationToken);
         var prompt = BuildPrompt(context, request.History, question);
 
-        // No images, and explicitly no JSON constraint: an answer is a sentence, not a document.
-        var text = await chatClient.CompleteAsync(
-            _settings.ApiKey, [], prompt, cancellationToken, jsonResponse: false);
+        // Call one: either an answer, or a search the server should run. JSON mode is what makes the
+        // second shape possible at all; a provider that ignores it still lands in the fallback below.
+        var first = await chatClient.CompleteAsync(
+            _settings.ApiKey, [], prompt, cancellationToken, jsonResponse: true);
 
-        var answer = CleanAnswer(text);
+        if (first is null)
+        {
+            logger.LogWarning("The agent's model call returned nothing usable.");
+            quota.Refund(userId);
+
+            return Unavailable();
+        }
+
+        var intent = ParseIntent(first);
+
+        if (intent?.Search is { } rawSearch && !string.IsNullOrWhiteSpace(rawSearch))
+        {
+            return await SearchAsync(userId, remaining, question, intent, rawSearch, cancellationToken);
+        }
+
+        // A parsed intent with no answer is a broken reply, not a sentence: never show the raw JSON.
+        var answer = CleanAnswer(intent is null ? first : intent.Answer);
 
         if (answer is null)
         {
@@ -127,7 +152,60 @@ internal sealed class AgentAssistant(
         }
 
         return OperationResult<AgentAnswerResponse>.Success(
-            new AgentAnswerResponse(answer, remaining));
+            new AgentAnswerResponse(answer, remaining, []));
+    }
+
+    /// <summary>
+    /// The one tool: run a real search over the public feed, then let the model summarise the rows.
+    /// </summary>
+    /// <remarks>
+    /// The model never sees ids or links — it saw a keyword, it gets titles and prices, and the
+    /// clickable list is built from the query result. A search that finds nothing stops here: a second
+    /// call could only guess at reasons, and "没找到" is already the whole answer.
+    /// </remarks>
+    private async Task<OperationResult<AgentAnswerResponse>> SearchAsync(
+        long userId,
+        int remaining,
+        string question,
+        AgentIntent intent,
+        string rawSearch,
+        CancellationToken cancellationToken)
+    {
+        var term = Short(rawSearch.Trim(), 50);
+        var categoryId = await ResolveCategoryIdAsync(intent.Category, cancellationToken);
+
+        var matches = await productService.ListAsync(
+            new ProductListQuery { Q = term, CategoryId = categoryId },
+            new PaginationQuery(1, MaxSearchResults),
+            cancellationToken);
+
+        if (matches.Items.Count == 0)
+        {
+            return OperationResult<AgentAnswerResponse>.Success(
+                new AgentAnswerResponse(
+                    "没找到相关的商品，换个关键词或者分类再试试。",
+                    remaining,
+                    []));
+        }
+
+        var summary = CleanAnswer(await chatClient.CompleteAsync(
+            _settings.ApiKey, [],
+            BuildSearchPrompt(question, matches.Items),
+            cancellationToken, jsonResponse: false));
+
+        if (summary is null)
+        {
+            logger.LogWarning("The agent's search summary returned nothing usable.");
+            quota.Refund(userId);
+
+            return Unavailable();
+        }
+
+        return OperationResult<AgentAnswerResponse>.Success(
+            new AgentAnswerResponse(
+                summary,
+                remaining,
+                [.. matches.Items.Select(item => new AgentProductResult(item.Id, item.Title, item.Price))]));
     }
 
     /// <summary>
@@ -535,6 +613,11 @@ internal sealed class AgentAssistant(
         prompt.AppendLine("不要用 markdown、列表、代码块或链接，也不要自称 AI。");
         prompt.AppendLine("只能依据下面「页面信息」回答；里面没有的事实，尤其是价格、库存和别人的联系方式，");
         prompt.AppendLine("就直说不知道，不要编造数字。");
+        prompt.AppendLine("如果用户是在让你找站内商品（例如「帮我找找自行车」「有没有便宜的台灯」），");
+        prompt.AppendLine("不要自己编答案，改成一个 JSON 对象：{\"search\":\"关键词\",\"category\":\"分类名或空字符串\"}。");
+        prompt.AppendLine("搜索词尽量短；分类名用站里常见的说法，拿不准就留空。");
+        prompt.AppendLine("其他问题照常回答，但整个回复也要是一个 JSON 对象：{\"answer\":\"你的回答\"}。");
+        prompt.AppendLine("不要编造商品、价格、链接或编号；搜索结果由系统另外附上。");
         prompt.AppendLine();
         prompt.AppendLine($"当前页面：{PageName(context.Page)}");
         prompt.AppendLine("页面信息：");
@@ -562,6 +645,34 @@ internal sealed class AgentAssistant(
 
         prompt.AppendLine();
         prompt.AppendLine($"用户现在问：{question}");
+
+        return prompt.ToString();
+    }
+
+    /// <summary>
+    /// The second call, after a search found rows: one short sentence over real data.
+    /// </summary>
+    /// <remarks>
+    /// Titles are shortened and ids are withheld — the list under the bubble is the server's, so the
+    /// model has nothing to invent a link from, and nothing to gain by reciting every row.
+    /// </remarks>
+    private static string BuildSearchPrompt(
+        string question,
+        IReadOnlyList<ProductSummaryResponse> items)
+    {
+        var prompt = new StringBuilder()
+            .AppendLine("你是「小北」，北方工业大学校园二手交易平台的小助手。")
+            .AppendLine("下面是从本站查到的真实在售商品。用 1 到 3 句口语中文说找到了什么、大概什么价位。")
+            .AppendLine("不要用 markdown、列表、代码块或链接；不要编造商品、价格或编号；")
+            .AppendLine("完整列表会由系统附在消息下方，不要逐条复述标题。")
+            .AppendLine()
+            .AppendLine($"用户想找：{question}")
+            .AppendLine("查到的商品：");
+
+        foreach (var item in items)
+        {
+            prompt.AppendLine($"- {Short(item.Title, 40)}，{Money(item.Price)}，{item.CategoryName}");
+        }
 
         return prompt.ToString();
     }
@@ -627,6 +738,72 @@ internal sealed class AgentAssistant(
         }
 
         return string.IsNullOrWhiteSpace(answer) ? null : answer;
+    }
+
+    /// <summary>
+    /// Reads call one's reply as either a search request or an answer.
+    /// </summary>
+    /// <remarks>
+    /// Returns null when there is no object in the text at all, which is also how a provider that
+    /// ignores <c>response_format</c> is handled: its plain sentence is then the answer, exactly as
+    /// before this feature existed.
+    /// </remarks>
+    private static AgentIntent? ParseIntent(string text)
+    {
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+
+        if (start < 0 || end <= start)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<AgentIntent>(text[start..(end + 1)], IntentFormat);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Turns the category name the model guessed into a real id, or null when it guessed wrong.
+    /// </summary>
+    /// <remarks>
+    /// Asked of the table directly rather than through the paged category list: the dictionary is
+    /// small today but the list endpoint sorts by <c>sort_order</c>, so a name could fall off the
+    /// first page and quietly turn a narrow search into a keyword-only one. A miss is not an error —
+    /// the search falls back to the keyword alone, which is still the thing the reader asked for.
+    /// </remarks>
+    private async Task<long?> ResolveCategoryIdAsync(string? name, CancellationToken cancellationToken)
+    {
+        var wanted = name?.Trim();
+
+        if (string.IsNullOrEmpty(wanted))
+        {
+            return null;
+        }
+
+        var exact = await dbContext.Categories
+            .AsNoTracking()
+            .Where(category => category.Status == CategoryStatus.Active && category.Name == wanted)
+            .Select(category => (long?)category.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (exact is long id)
+        {
+            return id;
+        }
+
+        return await dbContext.Categories
+            .AsNoTracking()
+            .Where(category => category.Status == CategoryStatus.Active
+                && (category.Name.Contains(wanted) || wanted.Contains(category.Name)))
+            .OrderBy(category => category.Id)
+            .Select(category => (long?)category.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     // ----------------------------------------------------------------------------------------
@@ -701,4 +878,14 @@ internal sealed class AgentAssistant(
         string Page,
         IReadOnlyList<AgentHint> Hints,
         string? ProductLine);
+
+    /// <summary>What call one may return: a search request, or the answer itself.</summary>
+    private sealed record AgentIntent
+    {
+        public string? Search { get; init; }
+
+        public string? Category { get; init; }
+
+        public string? Answer { get; init; }
+    }
 }

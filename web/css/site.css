@@ -1251,6 +1251,9 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 a.agent-hint { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
 a.agent-hint:hover { color: var(--link-hover); }
 
+.agent-results { margin: -2px 0 8px; }
+.agent-result { margin: 0; }
+
 .agent-log:not(:empty) {
   margin-top: 8px;
   padding-top: 8px;

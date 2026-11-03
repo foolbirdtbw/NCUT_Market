@@ -61,6 +61,18 @@ internal sealed class FakeAiChatClient : IAiChatClient
     /// <summary>How long <see cref="LongAnswerMarker"/>'s answer is.</summary>
     public const int LongAnswerLength = 500;
 
+    /// <summary>A question marker meaning "the assistant should search for the fixed keyword".</summary>
+    public const string SearchIntentMarker = "FINDLISTINGS";
+
+    /// <summary>A question marker meaning "search, restricted to the fixture's child category".</summary>
+    public const string SearchCategoryMarker = "FINDINCATEGORY";
+
+    /// <summary>A question marker meaning "search for a keyword nothing is listed under".</summary>
+    public const string SearchMissMarker = "FINDNOTHING";
+
+    /// <summary>A question marker meaning "the search finds rows, but the summary call comes back empty".</summary>
+    public const string SearchFailMarker = "SEARCHFAIL";
+
     private const string NormalAnswer =
         """
         {"flagged":false,"reason":"","title":"宿舍台灯 九成新 三档调光",
@@ -107,7 +119,18 @@ internal sealed class FakeAiChatClient : IAiChatClient
 
         // Chat markers are checked first: a question is pasted into the prompt verbatim, so a reader
         // asking about "LONGTITLE" must not get the listing assistant's answer.
-        var answer = prompt.Contains(EmptyAnswerMarker, StringComparison.Ordinal)
+        //
+        // The search markers split on jsonResponse: call one asks for JSON, call two does not. That
+        // is the only difference the stand-in needs to know, instead of matching our own prompt text.
+        var answer = prompt.Contains(SearchIntentMarker, StringComparison.Ordinal)
+            ? jsonResponse ? """{"search":"自行车"}""" : AgentAnswer
+            : prompt.Contains(SearchCategoryMarker, StringComparison.Ordinal)
+                ? jsonResponse ? """{"search":"自行车","category":"测试-子分类"}""" : AgentAnswer
+                : prompt.Contains(SearchMissMarker, StringComparison.Ordinal)
+                    ? jsonResponse ? """{"search":"ZZZ-NO-SUCH-LISTING"}""" : "   "
+                    : prompt.Contains(SearchFailMarker, StringComparison.Ordinal)
+                        ? jsonResponse ? """{"search":"自行车"}""" : "   "
+                        : prompt.Contains(EmptyAnswerMarker, StringComparison.Ordinal)
             ? "   "
             : prompt.Contains(LongAnswerMarker, StringComparison.Ordinal)
                 ? new string('答', LongAnswerLength)

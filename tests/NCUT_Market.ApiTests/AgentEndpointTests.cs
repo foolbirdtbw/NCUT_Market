@@ -182,8 +182,8 @@ public sealed class AgentEndpointTests(ApiFixture fixture) : IClassFixture<ApiFi
         Assert.Contains("¥66", prompt, StringComparison.Ordinal);
         Assert.Contains("商品详情", prompt, StringComparison.Ordinal);
 
-        // A conversational reply must not be forced into the listing assistant's JSON shape.
-        Assert.False(fixture.Ai.JsonModes[^1]);
+        // One call, and it is asked for JSON: the reply is either the answer or a search request.
+        Assert.True(fixture.Ai.JsonModes[^1]);
     }
 
     [Fact]
@@ -285,6 +285,135 @@ public sealed class AgentEndpointTests(ApiFixture fixture) : IClassFixture<ApiFi
         var clean = await fenced.Content.ReadFromJsonAsync<AgentAnswerResponse>();
 
         Assert.Equal("被围栏包起来的回答", clean!.Answer);
+    }
+
+    [Fact]
+    public async Task A_search_question_returns_matching_listings_and_links()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+        var title = NewTitle("自行车-");
+
+        var listing = await seller.PublishListingAsync(fixture, title, price: 88m);
+
+        var (browser, _) = await fixture.CreateSignedInClientAsync();
+
+        var response = await AskAsync(
+            browser, $"{FakeAiChatClient.SearchIntentMarker} 帮我找找自行车", "products", null);
+
+        response.EnsureSuccessStatusCode();
+
+        var answer = await response.Content.ReadFromJsonAsync<AgentAnswerResponse>();
+
+        Assert.Equal(FakeAiChatClient.AgentAnswer, answer!.Answer);
+
+        var hit = Assert.Single(answer.Results, item => item.Id == listing.Id);
+        Assert.Equal(title, hit.Title);
+        Assert.Equal(88m, hit.Price);
+
+        // Two calls for this question: intent first, summary second.
+        Assert.True(fixture.Ai.JsonModes[^2]);
+        Assert.False(fixture.Ai.JsonModes[^1]);
+
+        var prompt = fixture.Ai.Prompts[^1];
+
+        Assert.Contains(title, prompt, StringComparison.Ordinal);
+        Assert.Contains("¥88", prompt, StringComparison.Ordinal);
+
+        // The model gets titles and prices, never ids or links. The client builds the link.
+        Assert.DoesNotContain("#/products/", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_search_with_no_matches_answers_without_another_call()
+    {
+        var (client, _) = await fixture.CreateSignedInClientAsync();
+
+        var response = await AskAsync(
+            client, $"{FakeAiChatClient.SearchMissMarker} 帮我找找不存在的东西", "products", null);
+
+        response.EnsureSuccessStatusCode();
+
+        var answer = await response.Content.ReadFromJsonAsync<AgentAnswerResponse>();
+
+        Assert.Empty(answer!.Results);
+        Assert.Contains("没找到", answer.Answer, StringComparison.Ordinal);
+
+        // Still on the intent call: the stand-in would have answered a second one with blanks, so a
+        // pointless summary request would have turned this into a 503 instead of passing quietly.
+        Assert.True(fixture.Ai.JsonModes[^1]);
+    }
+
+    [Fact]
+    public async Task A_failed_search_summary_is_refunded()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+
+        await seller.PublishListingAsync(fixture, NewTitle("自行车-"), price: 12m);
+
+        var (client, _) = await fixture.CreateSignedInClientAsync();
+
+        var failed = await AskAsync(
+            client, $"{FakeAiChatClient.SearchFailMarker} 找找自行车", "products", null);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
+        Assert.Equal(ErrorCodes.ServiceUnavailable, await failed.ReadCodeAsync());
+
+        // The intent call succeeded, the summary call did not; the whole question still went back.
+        for (var index = 0; index < ApiFixture.TestDailyQuota; index++)
+        {
+            var ok = await AskAsync(
+                client, $"{FakeAiChatClient.AgentAnswerMarker} 第 {index} 问", "home", null);
+
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        }
+
+        var refused = await AskAsync(
+            client, $"{FakeAiChatClient.AgentAnswerMarker} 再问一句", "home", null);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode);
+        Assert.Equal(ErrorCodes.QuotaExceeded, await refused.ReadCodeAsync());
+    }
+
+    [Fact]
+    public async Task A_category_name_narrows_the_search()
+    {
+        var (seller, _) = await fixture.CreateSignedInClientAsync();
+
+        var inChild = await seller.PublishListingAsync(
+            fixture, NewTitle("自行车-"), price: 20m, categoryId: fixture.ChildCategoryId);
+
+        var elsewhere = await seller.PublishListingAsync(
+            fixture, NewTitle("自行车-"), price: 30m, categoryId: fixture.OtherCategoryId);
+
+        var (browser, _) = await fixture.CreateSignedInClientAsync();
+
+        var response = await AskAsync(
+            browser, $"{FakeAiChatClient.SearchCategoryMarker} 找找自行车", "products", null);
+
+        response.EnsureSuccessStatusCode();
+
+        var answer = await response.Content.ReadFromJsonAsync<AgentAnswerResponse>();
+
+        Assert.Contains(answer!.Results, item => item.Id == inChild.Id);
+        Assert.DoesNotContain(answer.Results, item => item.Id == elsewhere.Id);
+    }
+
+    [Fact]
+    public async Task A_plain_question_returns_no_results()
+    {
+        var (client, _) = await fixture.CreateSignedInClientAsync();
+
+        var response = await AskAsync(
+            client, $"{FakeAiChatClient.AgentAnswerMarker} 这件能便宜吗", "home", null);
+
+        response.EnsureSuccessStatusCode();
+
+        var answer = await response.Content.ReadFromJsonAsync<AgentAnswerResponse>();
+
+        // Empty, not null: the client renders an empty list the same way it renders a missing one,
+        // but only one of them is a contract.
+        Assert.Empty(answer!.Results);
+        Assert.True(fixture.Ai.JsonModes[^1]);
     }
 
     private async Task<AgentHintsResponse> HintsAsync(HttpClient client, string page, long? productId = null)
