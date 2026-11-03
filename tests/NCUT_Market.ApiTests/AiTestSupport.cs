@@ -43,6 +43,24 @@ internal sealed class FakeAiChatClient : IAiChatClient
     /// <summary>How long that title is. Comfortably past the form's 100-character ceiling.</summary>
     public const int LongTitleLength = 150;
 
+    /// <summary>A question marker meaning "the provider answered with nothing at all".</summary>
+    public const string EmptyAnswerMarker = "EMPTYANSWER";
+
+    /// <summary>A question marker meaning "the answer is far longer than the panel can show".</summary>
+    public const string LongAnswerMarker = "LONGANSWER";
+
+    /// <summary>A question marker meaning "the answer arrived wrapped in a markdown fence".</summary>
+    public const string FenceAnswerMarker = "FENCEANSWER";
+
+    /// <summary>A question marker meaning "answer as the chat assistant would".</summary>
+    public const string AgentAnswerMarker = "AGENTTEST";
+
+    /// <summary>What <see cref="AgentAnswerMarker"/> produces.</summary>
+    public const string AgentAnswer = "照片拍清楚一点，标题里写清是什么和几成新。";
+
+    /// <summary>How long <see cref="LongAnswerMarker"/>'s answer is.</summary>
+    public const int LongAnswerLength = 500;
+
     private const string NormalAnswer =
         """
         {"flagged":false,"reason":"","title":"宿舍台灯 九成新 三档调光",
@@ -64,6 +82,7 @@ internal sealed class FakeAiChatClient : IAiChatClient
 
     private readonly ConcurrentQueue<string> _prompts = new();
     private readonly ConcurrentQueue<string> _keys = new();
+    private readonly ConcurrentQueue<bool> _jsonModes = new();
 
     /// <summary>Every prompt this stand-in has been handed, oldest first.</summary>
     /// <remarks>The shared instance means these accumulate across the whole run; tests look for their own.</remarks>
@@ -72,22 +91,37 @@ internal sealed class FakeAiChatClient : IAiChatClient
     /// <summary>Every key this stand-in was asked to authenticate with, oldest first.</summary>
     public IReadOnlyList<string> Keys => [.. _keys];
 
+    /// <summary>Whether each call asked the provider to constrain its reply to JSON, oldest first.</summary>
+    public IReadOnlyList<bool> JsonModes => [.. _jsonModes];
+
     public Task<string?> CompleteAsync(
         string apiKey,
         IReadOnlyList<AiImage> images,
         string prompt,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool jsonResponse = true)
     {
         _prompts.Enqueue(prompt);
         _keys.Enqueue(apiKey);
+        _jsonModes.Enqueue(jsonResponse);
 
-        var answer = prompt.Contains(BrokenAnswerMarker, StringComparison.Ordinal)
-            ? $"抱歉，我不太明白。{LeakMarker}"
-            : prompt.Contains(LongTitleMarker, StringComparison.Ordinal)
-                ? LongTitleAnswer
-                : prompt.Contains(FlaggedMarker, StringComparison.Ordinal)
-                    ? FlaggedAnswer
-                    : NormalAnswer;
+        // Chat markers are checked first: a question is pasted into the prompt verbatim, so a reader
+        // asking about "LONGTITLE" must not get the listing assistant's answer.
+        var answer = prompt.Contains(EmptyAnswerMarker, StringComparison.Ordinal)
+            ? "   "
+            : prompt.Contains(LongAnswerMarker, StringComparison.Ordinal)
+                ? new string('答', LongAnswerLength)
+                : prompt.Contains(FenceAnswerMarker, StringComparison.Ordinal)
+                    ? "```\n被围栏包起来的回答\n```"
+                    : prompt.Contains(AgentAnswerMarker, StringComparison.Ordinal)
+                        ? AgentAnswer
+                        : prompt.Contains(BrokenAnswerMarker, StringComparison.Ordinal)
+                            ? $"抱歉，我不太明白。{LeakMarker}"
+                            : prompt.Contains(LongTitleMarker, StringComparison.Ordinal)
+                                ? LongTitleAnswer
+                                : prompt.Contains(FlaggedMarker, StringComparison.Ordinal)
+                                    ? FlaggedAnswer
+                                    : NormalAnswer;
 
         return Task.FromResult<string?>(answer);
     }

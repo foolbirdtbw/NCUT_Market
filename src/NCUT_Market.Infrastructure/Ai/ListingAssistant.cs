@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NCUT_Market.Core.Common;
@@ -32,7 +31,7 @@ namespace NCUT_Market.Infrastructure.Ai;
 internal sealed class ListingAssistant(
     AppDbContext dbContext,
     IAiChatClient chatClient,
-    IMemoryCache cache,
+    AiQuota quota,
     IOptions<AiOptions> options,
     ILogger<ListingAssistant> logger) : IListingAssistant
 {
@@ -88,7 +87,7 @@ internal sealed class ListingAssistant(
 
         if (!bringsOwnKey)
         {
-            if (!TrySpend(userId, out var left))
+            if (!quota.TrySpend(userId, out var left))
             {
                 return OperationResult<ListingSuggestionResponse>.Failure(
                     ErrorCodes.QuotaExceeded,
@@ -111,7 +110,7 @@ internal sealed class ListingAssistant(
             // afternoon.
             if (!bringsOwnKey)
             {
-                Refund(userId);
+                quota.Refund(userId);
             }
 
             return Unavailable();
@@ -444,58 +443,6 @@ internal sealed class ListingAssistant(
     private static OperationResult<ListingSuggestionResponse> Unavailable() =>
         OperationResult<ListingSuggestionResponse>.Failure(
             ErrorCodes.ServiceUnavailable, "AI 助手暂时用不了，自己写也一样能发布。");
-
-    /// <summary>
-    /// How many attempts an account has left today, for callers using the deployment's own key.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// In-process and deliberately so: this deployment runs one instance, and the alternative — a
-    /// table — means a write on every assistant call to defend against an abuse that has not happened.
-    /// The cost of being wrong is that a restart resets everyone's day, which is a trade this project
-    /// makes elsewhere too.
-    /// </para>
-    /// <para>
-    /// The key carries the Beijing date and expires at the end of it, from
-    /// <see cref="AppDbContext.AuditNow"/> — the project's one clock. Using UTC would roll everyone's
-    /// allowance over at 8am local.
-    /// </para>
-    /// </remarks>
-    private sealed class Counter
-    {
-        public int Value;
-    }
-
-    private static string QuotaKey(DateTime now, long userId) =>
-        $"ai-quota:{now:yyyyMMdd}:{userId}";
-
-    private bool TrySpend(long userId, out int remaining)
-    {
-        var now = AppDbContext.AuditNow;
-
-        var counter = cache.GetOrCreate(
-            QuotaKey(now, userId),
-            entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = now.Date.AddDays(1) - now;
-                return new Counter();
-            })!;
-
-        var spent = Interlocked.Increment(ref counter.Value);
-
-        remaining = Math.Max(0, _settings.DailyQuota - spent);
-
-        return spent <= _settings.DailyQuota;
-    }
-
-    private void Refund(long userId)
-    {
-        if (cache.TryGetValue(QuotaKey(AppDbContext.AuditNow, userId), out Counter? counter)
-            && counter is not null)
-        {
-            Interlocked.Decrement(ref counter.Value);
-        }
-    }
 
     /// <summary>A nearby listing, in the form the prompt needs it.</summary>
     private sealed record Comparable(string Title, decimal Price, ProductCondition Condition, bool Sold);

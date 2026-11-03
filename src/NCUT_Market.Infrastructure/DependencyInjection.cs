@@ -58,11 +58,14 @@ public static class DependencyInjection
         services.AddScoped<ITransactionService, TransactionService>();
         services.AddScoped<IOnlineService, OnlineService>();
 
-        // Not a cache in the usual sense: this holds the listing assistant's per-account daily
-        // counter, which is one small object per user per day. It is here rather than in a table
-        // because a single-instance deployment gets nothing from the extra write — see
-        // ListingAssistant for what that trade costs.
+        // Not a cache in the usual sense: this holds the per-account daily AI counter, which is one
+        // small object per user per day. It is here rather than in a table because a single-instance
+        // deployment gets nothing from the extra write — see AiQuota for what that trade costs.
         services.AddMemoryCache();
+
+        // Singleton, because it owns nothing but the cache and the options. Both the publish-page
+        // assistant and the floating one charge the same counter through it.
+        services.AddSingleton<AiQuota>();
 
         // The only outbound HTTP client in the project. Typed rather than named so the base address
         // and the timeout come from options at resolution time; the client is what carries the
@@ -83,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<IAiChatClient>(provider => provider.GetRequiredService<AiChatClient>());
 
         services.AddScoped<IListingAssistant, ListingAssistant>();
+        services.AddScoped<IAgentAssistant, AgentAssistant>();
 
         // The first hosted service in the project. It starts the trade-deadline sweep, and it is
         // switched off in the test host through BackgroundJobsOptions — see that type.

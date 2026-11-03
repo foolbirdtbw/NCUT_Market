@@ -37,7 +37,8 @@ internal sealed class AiChatClient(
         string apiKey,
         IReadOnlyList<AiImage> images,
         string prompt,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool jsonResponse = true)
     {
         var parts = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = prompt } };
 
@@ -61,12 +62,18 @@ internal sealed class AiChatClient(
         {
             ["model"] = _options.Model,
             ["temperature"] = 0.2,
-            ["response_format"] = new JsonObject { ["type"] = "json_object" },
             ["messages"] = new JsonArray
             {
                 new JsonObject { ["role"] = "user", ["content"] = parts }
             }
         };
+
+        // Only when the caller asked for a JSON object. Constraining the reply is what makes the
+        // listing assistant's answer parseable, and exactly what would ruin a chat reply.
+        if (jsonResponse)
+        {
+            body["response_format"] = new JsonObject { ["type"] = "json_object" };
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {

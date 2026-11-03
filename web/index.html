@@ -54,6 +54,45 @@
 
   <main class="wrap" id="view"></main>
 
+  <!-- 小助手小北。整块在 #view 外面——路由每次都用 .html() 整块重建 #view，放进去活不过一次换页。
+       她是全站唯一会动的东西：动作在 site.css 的 @keyframes 里，浅色主题用 steps() 做成像素感，
+       系统开了「减少动态效果」就整个停住。 -->
+  <div class="agent-widget" id="agent-widget">
+    <section class="agent-panel" id="agent-panel" aria-label="小助手小北" hidden>
+      <div class="agent-panel-head">
+        <strong>小北</strong>
+        <button type="button" class="button agent-close" id="agent-close"
+          aria-label="收起小助手">×</button>
+      </div>
+      <div class="agent-hints" id="agent-hints"></div>
+      <!-- 只在一页里有内容：发布页那一块发布助手的按钮和自带 key 输入框。由 agent.js 填。 -->
+      <div id="agent-tools"></div>
+      <div class="agent-log" id="agent-log"></div>
+      <div id="agent-error"></div>
+      <form id="agent-ask-form" class="agent-ask">
+        <input type="text" id="agent-input" maxlength="300" autocomplete="off"
+          placeholder="问我点什么…">
+        <button type="submit" class="button" id="agent-send">发送</button>
+      </form>
+      <p class="hint" id="agent-quota"></p>
+    </section>
+    <!-- 点她展开面板。aria-expanded 由 agent.js 跟着开头结尾一起改。 -->
+    <button type="button" class="agent-face" id="agent-face" aria-expanded="false"
+      aria-controls="agent-panel" aria-label="打开小助手小北">
+      <svg class="agent-char" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <ellipse class="agent-shadow" cx="32" cy="58" rx="13" ry="2"/>
+        <rect class="agent-head" x="15" y="16" width="34" height="30"/>
+        <path class="agent-antenna" d="M32 16 V9"/>
+        <circle class="agent-tip" cx="32" cy="7" r="2.5"/>
+        <g class="agent-eyes">
+          <rect class="agent-eye" x="23" y="27" width="5" height="6"/>
+          <rect class="agent-eye" x="36" y="27" width="5" height="6"/>
+          <path class="agent-mouth" d="M27 37 q5 4 10 0"/>
+        </g>
+      </svg>
+    </button>
+  </div>
+
   <footer class="site-footer">
     <div class="wrap">
       <div>NCUT Market ·
@@ -89,6 +128,8 @@
   <!-- 这两份要排在 app.js 前面：app.js 建路由表时就要用到 dictionaries 和 users。 -->
   <script src="js/dictionaries.js"></script>
   <script src="js/users.js"></script>
+  <!-- agent.js 也要排在 app.js 前面：app.js 的 route() 每次都调 agent.onRoute()。 -->
+  <script src="js/agent.js"></script>
   <script src="js/app.js"></script>
 </body>
 

@@ -25,7 +25,7 @@ public sealed class AppDbContextModelTests
     }
 
     [Fact]
-    public void Model_contains_exactly_the_nine_designed_tables()
+    public void Model_contains_exactly_the_eleven_designed_tables()
     {
         using var context = CreateContext();
 
@@ -43,6 +43,8 @@ public sealed class AppDbContextModelTests
                 "categories",
                 "conversations",
                 "dormitory_areas",
+                "feedback_votes",
+                "feedbacks",
                 "messages",
                 "notifications",
                 "product_images",

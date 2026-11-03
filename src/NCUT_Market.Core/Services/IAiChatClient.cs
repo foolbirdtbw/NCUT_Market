@@ -26,6 +26,11 @@ public interface IAiChatClient
     /// <param name="images">The photos to attach, in the order they should be presented.</param>
     /// <param name="prompt">The instruction text.</param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <param name="jsonResponse">
+    /// Ask the provider to constrain the reply to a JSON object. On by default because the listing
+    /// assistant depends on it; the free-form chat turns it off, since a JSON object is the one shape
+    /// a conversational answer must not have.
+    /// </param>
     /// <returns>
     /// The reply text, or null when there is nothing usable — the provider could not be reached, timed
     /// out, answered with a non-success status, or returned a body with no content in it.
@@ -44,5 +49,6 @@ public interface IAiChatClient
         string apiKey,
         IReadOnlyList<AiImage> images,
         string prompt,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool jsonResponse = true);
 }

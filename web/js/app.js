@@ -74,6 +74,10 @@
         /* 首页的入口卡和商品列表的发布按钮都是渲染时才有的，所以这些入口不能只在登录
          * 状态变化时刷一次，每次换页都要跟着重刷。 */
         paintNavVisibility();
+
+        /* 小北要跟着页面换说法，但她自己的容器在 #view 外面，不会被这次重建冲掉。
+         * 404 那条路也要调一次，不然从别的页走到不存在的地址，她的建议还停在上一页。 */
+        agent.onRoute(parsed.path);
         return;
       }
     }
@@ -83,6 +87,7 @@
       '<a class="button" href="#/products">去逛商品</a></div>');
 
     paintNav(null);
+    agent.onRoute(parsed.path);
   }
 
   function paintNav(path) {
@@ -244,6 +249,7 @@
     .on("click", "#lightbox", function () { products.closeImage(); })
     .on("keydown", function (event) {
       if (event.key === "Escape") {
+        agent.close();
         products.closeImage();
       }
     })
@@ -251,7 +257,15 @@
     .on("click", "[data-action='discard-cover']", function () { products.discardCover(); })
     // 选照片。change 不冒泡的说法只对老 IE 成立，现代浏览器里它冒得到 document。
     .on("change", "#create-images", function () { products.showChosenImages(); })
-    .on("click", "#ask-ai", function () { products.askAi(); })
+    /* 按钮和结果格子都在小北的面板里，所以要把格子的选择器传下去：
+     * 发布助手仍然写这张表单的标题/描述/价格，只是结论显示在她那一栏。 */
+    .on("click", "#ask-ai", function () { products.askAi("#agent-listing-slot"); })
+    .on("click", "#agent-face", function () { agent.toggle(); })
+    .on("click", "#agent-close", function () { agent.close(); })
+    .on("submit", "#agent-ask-form", function (event) {
+      event.preventDefault();
+      agent.ask();
+    })
     .on("click", "[data-action='contact-seller']", function () {
       messages.start($(this).attr("data-product-id"));
     })
@@ -376,6 +390,10 @@
     auth.onUserChanged(messages.refreshUnread);
     auth.onUserChanged(notifications.refreshUnread);
     auth.onUserChanged(paintNavVisibility);
+
+    /* 退出登录之后小北要清掉上一个账号的对话；登录之后输入框才可用，
+     * 提示里才会出现个人数字。 */
+    auth.onUserChanged(agent.onUserChanged);
 
     announcements.refreshBar();
 

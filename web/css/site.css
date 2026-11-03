@@ -107,6 +107,18 @@
   --font-body: "SimSun", "宋体", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
   --font-head: Georgia, "Times New Roman", "SimSun", "宋体", serif;
   --font-mono: ui-monospace, Consolas, "Courier New", monospace;
+
+  /* 小北。全站唯一会动的东西，所以她一个人有一套令牌。
+   *
+   * 浅色这边她必须像个像素小人：纯黑白、直角、没有光晕，动作走 steps() 而且只挪 3px。
+   * 这是「零过渡、零阴影、零动画」唯一的一处例外——用户要的就是一个动画小人——但用
+   * 步进而不是缓动，她才不会变成这套皮肤里唯一一个软塌塌的东西。 */
+  --agent-ink: #000000;
+  --agent-fill: #ffffff;
+  --agent-glow: none;
+  --agent-radius: 0px;
+  --agent-float: agent-float 2.4s steps(2, end) infinite;
+  --agent-blink: agent-blink 5s steps(1, end) infinite;
 }
 
 /* 深色：夜航玻璃拟态。这里只有令牌——组件那边还差得远，得靠文件末尾那一节。 */
@@ -184,6 +196,15 @@
 
   --font-body: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --font-head: var(--font-body);
+
+  /* 小北在夜航里是同一块玻璃：半透明白的面、香槟金的边和眼睛、一圈微光，动作换成缓动
+     和更慢的节奏。形状回归圆角，和周围的面板一致。 */
+  --agent-ink: #e4b863;
+  --agent-fill: rgba(255, 255, 255, .08);
+  --agent-glow: drop-shadow(0 0 8px rgba(228, 184, 99, .55));
+  --agent-radius: 12px;
+  --agent-float: agent-float 3.6s cubic-bezier(.16, 1, .3, 1) infinite;
+  --agent-blink: agent-blink 6s ease-in-out infinite;
 }
 
 /* ---------- 重置与排版 ---------- */
@@ -1176,6 +1197,158 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   user-select: all;
 }
 
+/* ---------- 小助手小北 ---------- */
+
+/* 右下角常驻。整块在 #view 外面（见 index.html），所以换页不会把它重建掉。
+   浮层里的颜色仍然全走令牌：浅色下自动是方角白底无阴影，深色下自动是玻璃。 */
+.agent-widget {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  /* 顶栏 20、看图浮层 10。要压住页面内容，但不能挡住看图浮层——人在看大图的时候
+     被一个气泡盖住半边是最糟的时刻。 */
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.agent-panel {
+  width: min(340px, calc(100vw - 32px));
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: var(--glass);
+  transition: var(--transition);
+}
+
+.agent-panel[hidden] { display: none; }
+
+.agent-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-close { padding: 0 8px; line-height: 1.6; }
+
+.agent-hints:empty { display: none; }
+
+.agent-hint {
+  display: block;
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+a.agent-hint { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+a.agent-hint:hover { color: var(--link-hover); }
+
+.agent-log:not(:empty) {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* 气泡里是模型写的字，里外都按纯文本处理：换行靠 pre-wrap，不解析 markdown。 */
+.agent-bubble {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-bubble.is-assistant { background: var(--surface-raised); }
+
+.agent-ask {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.agent-ask input { flex: 1; min-width: 0; }
+
+#agent-error:not(:empty) { margin-top: 8px; }
+
+.agent-face {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-ctl);
+  backdrop-filter: var(--glass);
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+/* 发布页有个东西可看：纯 CSS 的点，不额外发一次请求。 */
+.agent-face.has-tools::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mark);
+}
+
+/* 小人本体。全站唯一的两条 @keyframes 都在这里。 */
+.agent-char {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: var(--agent-float);
+  filter: var(--agent-glow);
+}
+
+.agent-head {
+  fill: var(--agent-fill);
+  stroke: var(--agent-ink);
+  stroke-width: 1.5;
+  /* CSS 的 rx 会盖掉 SVG 属性，于是浅色方块、深色圆角，一个形状走两套皮肤。 */
+  rx: var(--agent-radius);
+}
+
+.agent-eye { fill: var(--agent-ink); stroke: none; }
+
+.agent-mouth,
+.agent-antenna { fill: none; stroke: var(--agent-ink); stroke-width: 1.5; }
+
+.agent-tip { fill: var(--agent-ink); }
+
+/* 地面那一圈。浅色是铅笔线，深色那边描边换成金色后自然就是一圈微光。 */
+.agent-shadow { fill: none; stroke: var(--agent-ink); stroke-width: 1; opacity: .45; }
+
+/* 眨眼是一个硬切的 scaleY，不是渐隐——渐隐会变成这块皮肤里唯一一个「软」的动作。 */
+.agent-eyes {
+  transform-box: view-box;
+  transform-origin: 32px 30px;
+  animation: var(--agent-blink);
+}
+
+@keyframes agent-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes agent-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%, 97% { transform: scaleY(.1); }
+}
+
 /* ---------- 页脚 ---------- */
 
 /* 在线人数。数字由 app.js 拉 /api/online/count 填进来，每格一个 <span>，此处只留等宽数字的
@@ -1229,6 +1402,11 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
 
   .bubble { max-width: 88%; }
   .thread-form { flex-direction: column; }
+
+  /* 小北在窄屏上往里收一点，面板也别占掉半屏以上——她是个角落里的东西，不该变成主角。 */
+  .agent-widget { right: 10px; bottom: 10px; }
+  .agent-panel { max-height: 60vh; }
+  .agent-face { width: 56px; height: 56px; }
 }
 
 /* ---------- 深色：夜航玻璃拟态 ---------- */
@@ -1357,4 +1535,9 @@ tbody td { padding: 5px 8px; border: 1px solid var(--border); }
   :root[data-theme="dark"] .product-card[href]:hover,
   :root[data-theme="dark"] .entry-card:hover,
   :root[data-theme="dark"] .button:hover:not(:disabled) { transform: none; }
+
+  /* 小北是两套皮肤里唯一会动的东西，所以也只有她需要在这里单独关掉。静止姿势本身就是
+     完整的样子：站在那里、眼睛睁着。 */
+  .agent-char,
+  .agent-char * { animation: none; }
 }

@@ -732,17 +732,9 @@ window.products = (function ($) {
     return deferred.promise();
   }
 
-  /* 助手那一块。整块只在发布页出现——它要往 #form-description / #form-price 里填字，
-   * 那是这张表单自己的格子。 */
-  function aiPanelHtml() {
-    return '<div class="field-stack">' +
-      '<button type="button" class="button" id="ask-ai">AI 帮我看一下</button>' +
-      '<span class="hint">选好照片再点：AI 先看一眼有没有违规内容，没问题的话再帮你起标题、' +
-      '写描述、估个价。下面那几栏空着也没关系。照片会离开本站发到 AI 服务，我们不留存。</span>' +
-      aiKeyHtml() +
-      '<div id="ai-slot"></div>' +
-      '</div>';
-  }
+  /* 助手那一块不在这张表单里了——它在右下角小北的面板里，由 agent.js 渲染。
+   * 这里只提供两块砖：aiKeyHtml()（面板上的自带 key 输入框）和 askAi(slot)
+   * （点按钮时去读这张表单的照片、把结果写回这张表单的格子）。 */
 
   /* 自带 key 的输入框只在 HTTPS 下出现。
    *
@@ -761,25 +753,28 @@ window.products = (function ($) {
       '点按钮时随那一个请求发一次，离开这一页就跟输入框一起没了。</span>';
   }
 
-  function askAi() {
+  /* 结果往哪写由调用方定：按钮在 agent.js 的面板里，所以那块格子也在那边。
+   * 默认值留着，纯函数检查和一些调用点不用改。 */
+  function askAi(slotSelector) {
+    var slot = slotSelector || "#ai-slot";
     var input = $("#create-images");
     var files = input.length && input[0].files ? Array.prototype.slice.call(input[0].files) : [];
 
     if (!files.length) {
-      $("#ai-slot").html(NM.inlineError({ message: "先选至少一张照片，助手是照着照片看的。" }));
+      $(slot).html(NM.inlineError({ message: "先选至少一张照片，助手是照着照片看的。" }));
       return;
     }
 
     // 服务端也拦，这里先拦一道：与其悄悄少送几张，不如说清楚一次只看得了这么多。
     if (files.length > AI_MAX_IMAGES) {
-      $("#ai-slot").html(NM.inlineError({
+      $(slot).html(NM.inlineError({
         message: "助手一次最多看 " + AI_MAX_IMAGES + " 张照片，先少选几张。"
       }));
       return;
     }
 
     $("#ask-ai").prop("disabled", true).text("看图中…");
-    $("#ai-slot").html('<div class="loading">正在看图…大概要十几秒。</div>');
+    $(slot).html('<div class="loading">正在看图…大概要十几秒。</div>');
 
     // $.when 收一组 promise，全部成功才往下走；任何一个挂了都会带着它的原因落到失败分支。
     $.when.apply($, files.map(downscale)).then(function () {
@@ -809,11 +804,11 @@ window.products = (function ($) {
 
       return api.upload("/api/ai/listing-draft", formData, null, extra);
     }).then(function (suggestion) {
-      showSuggestion(suggestion);
+      showSuggestion(suggestion, slot);
     }, function (error) {
-      $("#ai-slot").html(NM.inlineError(error));
+      $(slot).html(NM.inlineError(error));
     }).always(function () {
-      $("#ask-ai").prop("disabled", false).text("AI 帮我看一下");
+      $("#ask-ai").prop("disabled", false).text("帮我看照片写商品信息");
     });
   }
 
@@ -822,7 +817,8 @@ window.products = (function ($) {
    * description 和 flagReason 是模型写出来的、彻头彻尾不可信的文本。描述走 .val()，
    * 理由走 NM.esc()，这里任何一个位置都不许拿 .html() 拼它们——这是这次改动里唯一一个
    * 能引进 XSS 的口子。 */
-  function showSuggestion(suggestion) {
+  function showSuggestion(suggestion, slotSelector) {
+    var slot = slotSelector || "#ai-slot";
     var parts = [];
     var filled = [];
 
@@ -869,7 +865,7 @@ window.products = (function ($) {
       parts.push('<p class="hint">今天还剩 ' + suggestion.remainingToday + ' 次。</p>');
     }
 
-    $("#ai-slot").html(parts.join(""));
+    $(slot).html(parts.join(""));
   }
 
   /* 当前页面的商品 id。从 hash 里读，不靠闭包——事件是委托的，
@@ -1019,7 +1015,6 @@ window.products = (function ($) {
       '<button type="button" class="button" id="generate-cover">没有照片？用标题生成一张</button>' +
       '<div id="cover-slot"></div>' +
       '</div>' +
-      aiPanelHtml() +
       formFieldsHtml(null) +
       '<div id="form-error"></div>' +
       '<button class="button button-primary" type="submit" id="create-submit">创建并上架</button>' +
@@ -1273,6 +1268,9 @@ window.products = (function ($) {
     submitEdit: submitEdit,
     showMine: showMine,
     deleteAccount: deleteAccount,
+    // 发布助手那一块现在长在 agent.js 的面板里：输入框由这里给，按钮触发这里改表单。
+    aiKeyHtml: aiKeyHtml,
+    askAi: askAi,
     transition: transition,
     deleteProduct: deleteProduct,
     uploadImage: uploadImage,
@@ -1280,7 +1278,6 @@ window.products = (function ($) {
     generateCover: generateCover,
     discardCover: discardCover,
     showChosenImages: showChosenImages,
-    askAi: askAi,
     openImage: openImage,
     closeImage: closeImage
   };
