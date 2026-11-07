@@ -28,6 +28,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<FeedbackVote> FeedbackVotes => Set<FeedbackVote>();
 
+    public DbSet<AiProfile> AiProfiles => Set<AiProfile>();
+
+    public DbSet<AiMessage> AiMessages => Set<AiMessage>();
+
     /// <summary>
     /// "Now" for every audit timestamp this context writes, expressed in Beijing time.
     /// </summary>

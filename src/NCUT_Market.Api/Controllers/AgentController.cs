@@ -86,4 +86,20 @@ public sealed class AgentController(IAgentAssistant agent) : ControllerBase
 
         return Ok(result.Value);
     }
+
+    /// <summary>
+    /// The conversations already had, oldest first, so the panel can show them again after a refresh.
+    /// </summary>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <response code="200">The newest few exchanges. Empty for an account that never asked anything.</response>
+    /// <response code="401">No token. A transcript belongs to exactly one account.</response>
+    [HttpGet("history")]
+    [Authorize]
+    [ProducesResponseType<IReadOnlyList<AgentMessageResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<AgentMessageResponse>>> History(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await agent.GetHistoryAsync(User.GetUserId(), cancellationToken));
+    }
 }

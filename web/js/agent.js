@@ -7,7 +7,8 @@
  * 她的容器在 index.html 里、#view 外面——路由每次都用 .html() 整块重建 #view，
  * 放进去活不过一次换页。所以这里只跟着路由换内容，不跟着路由重建自己。
  *
- * 对话历史只在这个闭包的内存里，不写 localStorage、不落库：刷新就没了，这是有意的。 */
+ * 对话历史在服务端落库（ai_messages，一次问答一行），打开面板时拉最近二十条回填。
+ * 这里的内存历史仍然只用来给接口传上下文，并且只认最后 8 条。 */
 window.agent = (function ($) {
   "use strict";
 
@@ -22,7 +23,9 @@ window.agent = (function ($) {
     page: "general",
     productId: null,
     history: [],
-    busy: false
+    busy: false,
+    // 已经拉过哪份记录（账号 id）。同一个人不重复拉，换账号要重新拉。
+    loadedFor: null
   };
 
   /* 当前路径对应的页名，和服务端 AgentAssistant 里的 slug 一一对应。
@@ -158,6 +161,7 @@ window.agent = (function ($) {
 
     paintComposer();
     refreshHints();
+    loadHistory();
 
     $("#agent-input").trigger("focus");
   }
@@ -251,6 +255,47 @@ window.agent = (function ($) {
     log.scrollTop(log[0].scrollHeight);
   }
 
+  /* 已经答过的问题从服务端拿回来，接回面板里。
+   * 只在日志还是空的时候回填：同一个人不重复拉，换账号由 onUserChanged 重置 loadedFor。 */
+  function loadHistory() {
+    if (!auth.isSignedIn()) {
+      return;
+    }
+
+    var user = auth.user();
+    var key = user && user.id ? String(user.id) : "unknown";
+
+    if (state.loadedFor === key) {
+      return;
+    }
+
+    state.loadedFor = key;
+
+    api.get("/api/ai/agent/history").then(function (rows) {
+      renderHistory(rows || []);
+    }, function () {
+      /* 拉不到就当没有记录：面板照样能问，只是看不到更早的。 */
+    });
+  }
+
+  function renderHistory(rows) {
+    if (!rows.length || !$("#agent-log").is(":empty")) {
+      return;
+    }
+
+    rows.forEach(function (row) {
+      appendBubble("user", row.question);
+      appendBubble("assistant", row.answer);
+      appendResults(row.results);
+
+      state.history.push({ role: "user", content: row.question });
+      state.history.push({ role: "assistant", content: row.answer });
+    });
+
+    // 回填完才截：接口只认最后 8 条，多出来的留在屏幕上看，不往模型那里送。
+    state.history = trimHistory(state.history);
+  }
+
   function ask() {
     if (state.busy) {
       return;
@@ -307,9 +352,12 @@ window.agent = (function ($) {
 
     if (!auth.isSignedIn()) {
       state.history = [];
+      state.loadedFor = null;
       $("#agent-log").empty();
       $("#agent-error").empty();
       $("#agent-quota").empty();
+    } else {
+      loadHistory();
     }
 
     if (state.open) {

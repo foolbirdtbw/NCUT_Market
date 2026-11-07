@@ -262,7 +262,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 
 ## 数据库
 
-11 张表，`utf8mb4` / `utf8mb4_0900_ai_ci`，每张表的主键都是 `id BIGINT AUTO_INCREMENT`。**列名不用逐个写 `HasColumnName`**——`AppDbContext.ApplySnakeCaseColumnNames` 在配置之后统一把 CLR 属性名转成 snake_case（`TransactionBuyerId` → `transaction_buyer_id`）。
+13 张表，`utf8mb4` / `utf8mb4_0900_ai_ci`，每张表的主键都是 `id BIGINT AUTO_INCREMENT`。**列名不用逐个写 `HasColumnName`**——`AppDbContext.ApplySnakeCaseColumnNames` 在配置之后统一把 CLR 属性名转成 snake_case（`TransactionBuyerId` → `transaction_buyer_id`）。
 
 | 表 | 装什么 | 关键约束 |
 |---|---|---|
@@ -277,6 +277,8 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `announcements` | 公告 | — |
 | `feedbacks` | 问题反馈 / 功能建议 + 处理状态 | `author_id` RESTRICT（匿名帖也照写）；索引 `idx_feedbacks_created_at` |
 | `feedback_votes` | 一票一行 | `uk_feedback_votes_feedback_id_user_id`（**一人一票**）；`feedback_id` **CASCADE**、`user_id` RESTRICT |
+| `ai_profiles` | 小北对一位读者的印象：一段模型写的摘要、几个搜索词、一个分类名、问过几问 | `uk_ai_profiles_user_id`（一人一行）；`user_id` RESTRICT——注销时由服务显式删
+| `ai_messages` | 小北答过的问题：问、答、当时列出的商品（JSON 文本） | 索引 `(user_id, id)`，只用来倒序取这个账号最近 20 条；`user_id` RESTRICT——注销时由服务显式删
 
 几个值得单独说的：
 
@@ -284,7 +286,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 - **软删没有全局过滤器。**`products.deleted_at` 是业务字段，靠每个查询自己显式过滤，没有 `HasQueryFilter`。
 - **交易记录就是 `products` 上的四列**（`transaction_buyer_id`、`transaction_accepted_at`、`buyer_confirmed_at`、`seller_confirmed_at`），没确认的提议则是 `conversations` 上的两列。没有单独的 `transactions` 表——这是「软删而不是硬删」那条规则的全部理由。
 - **`last_activity_at` / `last_message_at` 不是审计列**，是业务字段，只由各自的 service 手工推进。审计那套自动盖章不碰它们（否则「这个商品被真的改过」会被每次保存刷新，留给草稿清理的那个时钟就永远走不动）。
-- 迁移是**手工执行**的（`dotnet ef database update`），启动时不建表、不改表。十个迁移按顺序：`InitialCreate` → `AddUserRoleAndMessaging` → `AddProductTransaction` → `DropImageOriginalKey` → `AddPasswordResetCode` → `AddUserLastSeenAt` → `AddUserStudentId` → `AddProductDeletedAt` → `AddConversationHide` → `AddFeedback`。
+- 迁移是**手工执行**的（`dotnet ef database update`），启动时不建表、不改表。十二个迁移按顺序：`InitialCreate` → `AddUserRoleAndMessaging` → `AddProductTransaction` → `DropImageOriginalKey` → `AddPasswordResetCode` → `AddUserLastSeenAt` → `AddUserStudentId` → `AddProductDeletedAt` → `AddConversationHide` → `AddFeedback` → `AddAiProfile` → `AddAiMessages`。
 
 ## HTTP 接口
 
@@ -300,7 +302,7 @@ powershell -File db/seed-demo.ps1 -Reset      # 先清掉上次的再重来
 | `api/dormitory-areas` | `GET`、`GET {id}` 匿名；`POST` / `PUT {id}` / `DELETE {id}` 管理员 |
 | `api/announcements` | `GET` 匿名；`POST` / `DELETE {id}` 管理员 |
 | `api/feedback` | `GET` 匿名（登录了会标出自己赞过的）；`POST`、`POST {id}/vote` 需登录；`PUT {id}/status`、`DELETE {id}` 管理员 |
-| `api/ai` | `POST listing-draft` 需登录。`multipart/form-data`：`images`（1..3 张，JPEG/PNG/WebP，单张 ≤ 2 MB）、可选 `categoryId`、可选 `title`。返回违规判定、标题、价格区间、描述，**不落库**。见下面的「发布助手」。`GET agent/hints` **匿名可调**（`page`、可选 `productId`，只回服务端算好的提示，草稿不会因为 id 被人试出来）；`POST agent/ask` 需登录，空问题/超长 400，占当天额度；用户让她找商品时会按关键词/分类查公开在售商品，响应里的 `results`（`id`、`title`、`price`）是服务端查出来的真实列表。见「小助手小北」 |
+| `api/ai` | `POST listing-draft` 需登录。`multipart/form-data`：`images`（1..3 张，JPEG/PNG/WebP，单张 ≤ 2 MB）、可选 `categoryId`、可选 `title`。返回违规判定、标题、价格区间、描述，**不落库**。见下面的「发布助手」。`GET agent/hints` **匿名可调**（`page`、可选 `productId`，只回服务端算好的提示，草稿不会因为 id 被人试出来）；`POST agent/ask` 需登录，空问题/超长 400，占当天额度；她可以通过 `search_products` 工具按关键词/分类查公开在售商品，响应里的 `results`（`id`、`title`、`price`）是服务端查出来的真实列表；`GET agent/history` 需登录，回最近 20 条问答应答，用于刷新后回填面板。见「小助手小北」 |
 | `api/users` | `GET`、`POST {id}/reset-password` 管理员 |
 | `api/online` | `GET count`（匿名） |
 | 非控制器 | `GET /health`；Development 下还有 `/openapi/v1.json`、`/scalar/v1`、`GET /dev/errors/throw/{kind}` |
@@ -380,20 +382,32 @@ HTTPS 下发布页会多出一个「用自己的 API key」的输入框。填了
 | 从哪来 | 服务端按当前页面查库算出来（草稿数、未读会话、挂了多久、同类均价） | 一次模型调用 |
 | 要不要登录 | **不要**，匿名也能看静态文案 | 要，`[Authorize]` |
 | 花不花额度 | **不花** | 花，和发布助手共用同一个计数器 |
-| 成本 | 每页一次查询（匿名页零查询），不缓存 | 一次模型调用；找商品时两次（先判断意图，再总结结果） |
+| 成本 | 每页一次查询（匿名页零查询），不缓存 | 一次模型调用；找商品时多一轮（工具返回结果后她再说一句话，最多 3 轮）；每 3 问或每次搜索再多一次写画像；每次回答多写一行 `ai_messages` |
 
-**找商品是两段式的。** 第一次调用让模型只回一个 JSON 意图——`{"search":"关键词","category":"分类名"}` 或者 `{"answer":"回答"}`；如果它要搜，服务端拿这个关键词（分类名先查成 id）去查公开在售的商品，最多 5 条，再把**标题、价格、分类**交给第二次调用写一句总结。所以：
+**找商品是一次真的工具调用。** `search_products` 通过协议里的 `tool_calls` 交给她，参数是 `query`（一个具体关键词）、`also`（2～4 个同义词）、`category`（分类名）和 `maxPrice`（用户说的价格上限）。要不要搜、搜什么，都由模型说；要搜就服务端去查公开在售的商品，最多 5 条，把**标题、价格、分类**作为工具结果回给她，她再说一句话。前端拿服务端的 `id` 拼 `#/products/{id}`。所以：
 
-- **模型看不到商品 id，也看不到链接。** 结果列表是服务端按真实查询拼的，前端拿 `id` 拼 `#/products/{id}`。编不出来一个不存在的商品。
+- **模型看不到商品 id，也看不到链接。** 结果列表是服务端按真实查询拼的。编不出来一个不存在的商品。
+- **追问也算找。** 上一轮刚搜过、这一句是「都没有吗」「还有吗」，prompt 要求她调工具再搜一次，而不是回一句「我看不到商品清单」。
+- **关键词是一串，不是一个。** 除了 `query` 她还能给 `also`，服务端按顺序查，命中第一个就停——「我想买点喝茶用的」`query` 可能是「茶具」，真正命中的是同义词「保温杯」。用户说得越笼统，这一步越是全靠模型把话说具体。
+- **分类是兜底，不是补位。** prompt 里就带着整份站内分类名，模型只能从里面原样挑一个。关键词**一条都没命中**、又给了分类时，才把该分类下的在售商品拿出来——所以「找找书」能捞出标题里根本没有「书」的《离散数学》。关键词命中了就只给命中的，不会再拿同分类的别的商品把 5 个空位填满（那正是「找英语语法书却冒出计算机网络」的来源）。没给分类就只按关键词查，不替用户猜分类。
+- **说了价格就真的按价格查。** 「15 以下」「预算 50」会被模型放进 `maxPrice`，服务端的关键词查询和分类兜底都带上这个上限，超价的商品根本不会进列表——不是靠她只看不说。
 - **一次提问只扣一次额度**，不管中间调了几次模型；只有拿不到能用的输出才退。
-- **查不到就不发第二次。** 回固定一句「没找到相关的商品，换个关键词或者分类再试试。」，是成功，不退额度。
-- 这套用的是现成的 `jsonResponse` 开关，不是协议级的 `tool_calls`——见「已知边界」。
+- **查不到就直说。** 工具回一句「站内没有找到相关的在售商品。」，她照着这句回答，不再多调一次模型去猜原因。
+- **循环是有上限的。** 一次提问最多 3 轮工具；到上限再要一轮但**不给工具**，她必须说点什么——所以模型再怎么转圈，用户拿到的也是一句话，不是 503。
 
 **每页最多三条**，按「最该动手的」排前面，永远留一条兜底，所以面板不会空：首页给草稿数和未读私信，商品列表给「你有 N 件在售」，详情页给卖家「有人想交易 / 一周内有 N 人问过 / 挂了 14 天了」，给买家同类近期均价，个人主页给草稿和 30 天没动过的，私信页给未读和待处理提议，通知页给未读数，反馈页只给两条静态说明。**未登录一次库都不查**。
 
 **草稿不外泄。** 详情页的提示要读商品，可见性照 `ProductService.GetByIdAsync` 的规则——`Published`/`Sold`/`InTransaction` 或本人。别人拿一个草稿 id 来问，回的是通用建议，不是 404：**商品 id 不能变成探测草稿的口子**。
 
-**历史只在浏览器内存里。** 随每次请求带上，服务端只认最后 8 条、`role` 只认 `user`/`assistant`、单条截 300 字、空的丢掉。不写 `localStorage`，不落库，刷新即丢。
+**历史会留在服务端，但发给模型的是浏览器给的那一份。** 每次答完一题写一行 `ai_messages`（问、答、当时列出的商品），打开面板时 `GET agent/history` 拉回最近 20 条——刷新、换设备、隔天再来都能看到，聊过的话不会凭空消失。但**发给模型的上下文仍然只来自浏览器**：随每次请求带上，服务端只认最后 8 条、`role` 只认 `user`/`assistant`、单条截 300 字、空的丢掉。两条来路分开的好处是「翻得到记录」和「模型记得上下文」互不牵连：清掉服务端记录不影响提问，浏览器不传历史也只是少了追问的连贯性。回答失败的这一问不落库——和浏览器自己记历史的规则一致。
+
+**但她记得这个人想买什么。** `ai_profiles` 一人一行，每隔 3 问、或者只要这次问的是「帮我找找…」，就多调一次模型，把最近的对话压成一段不超过 80 字的备忘、最多 5 个搜索词、一个站内分类名。下一次提问时那段备忘会出现在 prompt 的「你对这位用户的印象」里；首页和商品列表的面板会多一条 `recommend` 提示，直接用记住的分类名查一件在售的，链到详情页——前端不用改，`renderHints()` 本来就会把带 `href` 的提示渲染成链接。
+
+- **只记想买什么和价位。** prompt 里明说不推测性别、学院、年级、联系方式；写回来的摘要和关键词都先截断再落库，超出的直接丢掉。
+- **分类存名字，不存外键。** 管理员删分类不会因为这一行变成 409；名字解析不出来就当没分类，退回按关键词查。
+- **模型挂了不影响这一次回答。** 画像是回答给出**之后**才算的，那一次调用失败就保留旧备忘，不抛错、不退额度。
+- **不占额度。** 画像是服务端自己的维护成本，和用户问了几次无关。
+- **注销即忘。** `AuthService.DeleteAsync` 里显式删掉这一行——外键是 RESTRICT，所以必须自己删。v1 没有手动「清除记忆」的入口。
 
 **答案不渲染 markdown。** 清洗只做四件事——去首尾围栏、连续空行收成两行、截 300 字、空则当失败退额度；前端一律 `NM.esc()` + `pre-wrap`。她写出来的 markdown 在页面上就是几个星号，这比一个写坏的渲染器安全，也没什么损失。
 
@@ -440,8 +454,8 @@ node out/check-frontend.js
 - **没有 API 版本化。**`/api/**` 就是当前版本。
 - **不存原图。**每张图只留 1280 / 640 / 320 三个重新编码过的尺寸，源字节从不落盘。这是隐私上的好事，但也意味着「重新裁一次缩略图」得让用户重传。
 - **前端只有纯函数有自动测试。**视图、请求、canvas 画图靠手点。前端那些更细的取舍写在 [`web/README.md`](web/README.md) 里。
-- **小北的聊天记录刷新即丢。**历史只活在浏览器内存里，不落库、不进 `localStorage`。刷新页面她就忘了刚才聊的——这是省掉一张会话表和一个清理任务换来的，不是没做完。
-- **小北只有一个工具：找商品。** 它不是协议级的 `tool_calls`——`IAiChatClient` 没动过——而是两段式 JSON 意图：模型只回「要搜什么」，服务端去查真实在售列表，再把查询结果交给第二次调用写一句话。除了这件，她仍然只能看到服务端在那一页替她算好的事实（草稿数、未读数、同类均价）。没有别的动作、没有向量库、没有流式输出，也不做价格筛选（「便宜的台灯」只按关键词和默认排序找）。
+- **小北的聊天记录现在落库了。** `ai_messages` 一人一行一问答：问、答、当时列出的商品 id 和标题。所以刷新、换设备都能看到之前的对话，代价是聊天正文进了数据库——这一点和「画像只是模型写的摘要」不同，**问答原文是原样存的**（各截 400 字）。`GET /api/ai/agent/history` 一次只回这个账号最近 20 条，别的人拿不到。v1 **没有手动清除入口**：注销账号时 `AuthService.DeleteAsync` 会把这一张表和 `ai_profiles` 一起删掉。商品下架或删了，历史里的那条链接就点成 404——记录不跟着商品变。
+- **小北只有一个工具：找商品。** 它是真的 `tool_calls`：`IAiChatClient.ChatAsync` 把 `search_products` 的定义发过去，模型要么直接回答，要么调用它，服务端跑查询、把结果作为 `tool` 消息回传，最多 3 轮。除了这件，她仍然只能看到服务端在那一页替她算好的事实（草稿数、未读数、同类均价）。**没有写操作**——不能改商品、不能发私信，工具表里就一个只读的搜索。价格上限只在用户自己说出来时才生效，不问「便宜点」不会自动按价格排序，也不做多条件组合（成色、校区、时间都还没有参数）。没有别的工具、没有向量库、没有流式输出。
 
 ## 仓库镜像
 

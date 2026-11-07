@@ -64,14 +64,36 @@ internal sealed class FakeAiChatClient : IAiChatClient
     /// <summary>A question marker meaning "the assistant should search for the fixed keyword".</summary>
     public const string SearchIntentMarker = "FINDLISTINGS";
 
-    /// <summary>A question marker meaning "search, restricted to the fixture's child category".</summary>
+    /// <summary>
+    /// A question marker meaning "search the fixed keyword inside the fixture's child category". The
+    /// keyword matches no title on purpose, so the category is the only thing that can find anything.
+    /// </summary>
     public const string SearchCategoryMarker = "FINDINCATEGORY";
+
+    /// <summary>A question marker meaning "match by keyword inside the child category, category and all".</summary>
+    public const string SearchPadMarker = "FINDPAD";
+
+    /// <summary>A question marker meaning "search, with a ceiling of ¥50 the reader stated".</summary>
+    public const string SearchPriceMarker = "FINDUNDER";
 
     /// <summary>A question marker meaning "search for a keyword nothing is listed under".</summary>
     public const string SearchMissMarker = "FINDNOTHING";
 
     /// <summary>A question marker meaning "the search finds rows, but the summary call comes back empty".</summary>
     public const string SearchFailMarker = "SEARCHFAIL";
+
+    /// <summary>A question marker meaning "the keyword matches nothing, but the synonym does".</summary>
+    public const string SearchSynonymMarker = "FINDWITHALSO";
+
+    /// <summary>
+    /// Text only the profile prompt carries, which is what makes a call identifiable as "summarise
+    /// this reader" — the question itself can appear in both kinds of prompt.
+    /// </summary>
+    public const string ProfilePromptMarker = "给站内助手看的备忘";
+
+    /// <summary>What the profile call returns. The category is the fixture's child category.</summary>
+    public const string ProfileAnswer =
+        """{"summary":"这位同学在找二手教材，预算不高。","keywords":["离散数学"],"category":"测试-子分类"}""";
 
     private const string NormalAnswer =
         """
@@ -94,7 +116,8 @@ internal sealed class FakeAiChatClient : IAiChatClient
 
     private readonly ConcurrentQueue<string> _prompts = new();
     private readonly ConcurrentQueue<string> _keys = new();
-    private readonly ConcurrentQueue<bool> _jsonModes = new();
+    private readonly ConcurrentQueue<string> _chatPrompts = new();
+    private readonly ConcurrentQueue<bool> _toolsOffered = new();
 
     /// <summary>Every prompt this stand-in has been handed, oldest first.</summary>
     /// <remarks>The shared instance means these accumulate across the whole run; tests look for their own.</remarks>
@@ -103,8 +126,11 @@ internal sealed class FakeAiChatClient : IAiChatClient
     /// <summary>Every key this stand-in was asked to authenticate with, oldest first.</summary>
     public IReadOnlyList<string> Keys => [.. _keys];
 
-    /// <summary>Whether each call asked the provider to constrain its reply to JSON, oldest first.</summary>
-    public IReadOnlyList<bool> JsonModes => [.. _jsonModes];
+    /// <summary>Every conversation handed to <see cref="ChatAsync"/>, oldest first, messages joined.</summary>
+    public IReadOnlyList<string> ChatPrompts => [.. _chatPrompts];
+
+    /// <summary>Whether each chat turn was allowed to call a tool, oldest first.</summary>
+    public IReadOnlyList<bool> ToolsOffered => [.. _toolsOffered];
 
     public Task<string?> CompleteAsync(
         string apiKey,
@@ -115,29 +141,17 @@ internal sealed class FakeAiChatClient : IAiChatClient
     {
         _prompts.Enqueue(prompt);
         _keys.Enqueue(apiKey);
-        _jsonModes.Enqueue(jsonResponse);
 
-        // Chat markers are checked first: a question is pasted into the prompt verbatim, so a reader
-        // asking about "LONGTITLE" must not get the listing assistant's answer.
-        //
-        // The search markers split on jsonResponse: call one asks for JSON, call two does not. That
-        // is the only difference the stand-in needs to know, instead of matching our own prompt text.
-        var answer = prompt.Contains(SearchIntentMarker, StringComparison.Ordinal)
-            ? jsonResponse ? """{"search":"自行车"}""" : AgentAnswer
-            : prompt.Contains(SearchCategoryMarker, StringComparison.Ordinal)
-                ? jsonResponse ? """{"search":"自行车","category":"测试-子分类"}""" : AgentAnswer
-                : prompt.Contains(SearchMissMarker, StringComparison.Ordinal)
-                    ? jsonResponse ? """{"search":"ZZZ-NO-SUCH-LISTING"}""" : "   "
-                    : prompt.Contains(SearchFailMarker, StringComparison.Ordinal)
-                        ? jsonResponse ? """{"search":"自行车"}""" : "   "
-                        : prompt.Contains(EmptyAnswerMarker, StringComparison.Ordinal)
-            ? "   "
-            : prompt.Contains(LongAnswerMarker, StringComparison.Ordinal)
-                ? new string('答', LongAnswerLength)
-                : prompt.Contains(FenceAnswerMarker, StringComparison.Ordinal)
-                    ? "```\n被围栏包起来的回答\n```"
-                    : prompt.Contains(AgentAnswerMarker, StringComparison.Ordinal)
-                        ? AgentAnswer
+        // The profile prompt is checked before anything else: it carries the user's question verbatim,
+        // so a reader asking about another marker would otherwise get that marker's answer here.
+        var answer = prompt.Contains(ProfilePromptMarker, StringComparison.Ordinal)
+            ? ProfileAnswer
+            : prompt.Contains(EmptyAnswerMarker, StringComparison.Ordinal)
+                ? "   "
+                : prompt.Contains(LongAnswerMarker, StringComparison.Ordinal)
+                    ? new string('答', LongAnswerLength)
+                    : prompt.Contains(FenceAnswerMarker, StringComparison.Ordinal)
+                        ? "```\n被围栏包起来的回答\n```"
                         : prompt.Contains(BrokenAnswerMarker, StringComparison.Ordinal)
                             ? $"抱歉，我不太明白。{LeakMarker}"
                             : prompt.Contains(LongTitleMarker, StringComparison.Ordinal)
@@ -147,6 +161,75 @@ internal sealed class FakeAiChatClient : IAiChatClient
                                     : NormalAnswer;
 
         return Task.FromResult<string?>(answer);
+    }
+
+    /// <summary>
+    /// The agent's conversation. A marker in the question makes it ask for a search on the first turn,
+    /// and answer in prose once the tool's rows come back.
+    /// </summary>
+    /// <remarks>
+    /// Whether a turn may call a tool is read from <paramref name="tools"/>, and whether it already has
+    /// results is read from a <c>tool</c> message in the conversation — both things the service
+    /// genuinely sends, so this needs no state of its own and cannot race another test class.
+    /// </remarks>
+    public Task<AiChatReply?> ChatAsync(
+        string apiKey,
+        IReadOnlyList<AiChatMessage> messages,
+        IReadOnlyList<AiToolDefinition>? tools,
+        CancellationToken cancellationToken = default)
+    {
+        var joined = string.Join("\n", messages.Select(message => message.Content ?? string.Empty));
+
+        _chatPrompts.Enqueue(joined);
+        _keys.Enqueue(apiKey);
+        _toolsOffered.Enqueue(tools is { Count: > 0 });
+
+        var answered = messages.Any(message => message.Role == "tool");
+
+        if (!answered && tools is { Count: > 0 })
+        {
+            var arguments = joined.Contains(SearchIntentMarker, StringComparison.Ordinal)
+                ? """{"query":"自行车"}"""
+                : joined.Contains(SearchCategoryMarker, StringComparison.Ordinal)
+                    ? """{"query":"ZZZ-NO-SUCH-THING","category":"测试-子分类"}"""
+                    : joined.Contains(SearchPadMarker, StringComparison.Ordinal)
+                        ? """{"query":"自行车","category":"测试-子分类"}"""
+                        : joined.Contains(SearchPriceMarker, StringComparison.Ordinal)
+                            ? """{"query":"自行车","maxPrice":50}"""
+                            : joined.Contains(SearchMissMarker, StringComparison.Ordinal)
+                                ? """{"query":"ZZZ-NO-SUCH-LISTING"}"""
+                                : joined.Contains(SearchFailMarker, StringComparison.Ordinal)
+                                    ? """{"query":"自行车"}"""
+                                    : joined.Contains(SearchSynonymMarker, StringComparison.Ordinal)
+                                        ? """{"query":"ZZZ-NO-SUCH-THING","also":["自行车"]}"""
+                                        : null;
+
+            if (arguments is not null)
+            {
+                return Task.FromResult<AiChatReply?>(new AiChatReply(
+                    null,
+                    [new AiToolCall("call-1", "search_products", arguments)]));
+            }
+        }
+
+        // The rows came back and this provider still has nothing to say — the shape a summarising
+        // failure takes now that the summary is the model's own next turn. An empty answer takes the
+        // same exit: a reply with neither prose nor a tool call.
+        if ((answered && joined.Contains(SearchFailMarker, StringComparison.Ordinal))
+            || joined.Contains(EmptyAnswerMarker, StringComparison.Ordinal))
+        {
+            return Task.FromResult<AiChatReply?>(new AiChatReply(null, []));
+        }
+
+        var answer = joined.Contains(LongAnswerMarker, StringComparison.Ordinal)
+            ? new string('答', LongAnswerLength)
+            : joined.Contains(FenceAnswerMarker, StringComparison.Ordinal)
+                ? "```\n被围栏包起来的回答\n```"
+                : joined.Contains(BrokenAnswerMarker, StringComparison.Ordinal)
+                    ? $"抱歉，我不太明白。{LeakMarker}"
+                    : AgentAnswer;
+
+        return Task.FromResult<AiChatReply?>(new AiChatReply(answer, []));
     }
 }
 

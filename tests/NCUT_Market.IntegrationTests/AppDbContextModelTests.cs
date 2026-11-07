@@ -25,7 +25,7 @@ public sealed class AppDbContextModelTests
     }
 
     [Fact]
-    public void Model_contains_exactly_the_eleven_designed_tables()
+    public void Model_contains_exactly_the_thirteen_designed_tables()
     {
         using var context = CreateContext();
 
@@ -39,6 +39,8 @@ public sealed class AppDbContextModelTests
         Assert.Equal(
             new[]
             {
+                "ai_messages",
+                "ai_profiles",
                 "announcements",
                 "categories",
                 "conversations",

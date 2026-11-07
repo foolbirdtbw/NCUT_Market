@@ -75,6 +75,175 @@ internal sealed class AiChatClient(
             body["response_format"] = new JsonObject { ["type"] = "json_object" };
         }
 
+        var message = await SendAsync(body, apiKey, cancellationToken);
+
+        try
+        {
+            // A message whose content is not a string — some providers return an array of parts — is
+            // not something either caller can use.
+            return message?["content"]?.GetValue<string>();
+        }
+        catch (JsonException)
+        {
+            logger.LogWarning("The model provider's answer was not JSON.");
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            logger.LogWarning("The model provider's answer had no readable content.");
+            return null;
+        }
+    }
+
+    public async Task<AiChatReply?> ChatAsync(
+        string apiKey,
+        IReadOnlyList<AiChatMessage> messages,
+        IReadOnlyList<AiToolDefinition>? tools,
+        CancellationToken cancellationToken = default)
+    {
+        var body = new JsonObject
+        {
+            ["model"] = _options.Model,
+            ["temperature"] = 0.2,
+            ["messages"] = BuildMessages(messages)
+        };
+
+        if (tools is { Count: > 0 })
+        {
+            var definitions = new JsonArray();
+
+            foreach (var tool in tools)
+            {
+                definitions.Add(new JsonObject
+                {
+                    ["type"] = "function",
+                    ["function"] = new JsonObject
+                    {
+                        ["name"] = tool.Name,
+                        ["description"] = tool.Description,
+                        ["parameters"] = JsonNode.Parse(tool.ParametersJson)
+                    }
+                });
+            }
+
+            body["tools"] = definitions;
+
+            // "auto" rather than "required": most questions are answered from the page facts alone,
+            // and a model forced to call a tool would search for something nobody asked about.
+            body["tool_choice"] = "auto";
+        }
+
+        var message = await SendAsync(body, apiKey, cancellationToken);
+
+        if (message is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var calls = new List<AiToolCall>();
+
+            if (message["tool_calls"] is JsonArray requested)
+            {
+                foreach (var call in requested)
+                {
+                    var id = call?["id"]?.GetValue<string>();
+                    var name = call?["function"]?["name"]?.GetValue<string>();
+
+                    if (id is null || name is null)
+                    {
+                        continue;
+                    }
+
+                    // Arguments are kept as the raw string. A model can emit `{}`, a key it made up,
+                    // or half an object, and only the service that defined the tool can say what that
+                    // means — parsing here would just move the decision into the transport.
+                    calls.Add(new AiToolCall(id, name, call?["function"]?["arguments"]?.GetValue<string>() ?? "{}"));
+                }
+            }
+
+            var content = message["content"] is JsonValue value ? value.GetValue<string>() : null;
+
+            if (calls.Count == 0 && string.IsNullOrWhiteSpace(content))
+            {
+                logger.LogWarning("The model provider's answer had neither content nor tool calls.");
+                return null;
+            }
+
+            return new AiChatReply(content, calls);
+        }
+        catch (JsonException)
+        {
+            logger.LogWarning("The model provider's answer was not JSON.");
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            logger.LogWarning("The model provider's answer had no readable content.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Turns the conversation into the wire shape, including the two fields only a tool loop uses.
+    /// </summary>
+    private static JsonArray BuildMessages(IReadOnlyList<AiChatMessage> messages)
+    {
+        var array = new JsonArray();
+
+        foreach (var message in messages)
+        {
+            var node = new JsonObject
+            {
+                ["role"] = message.Role,
+                ["content"] = message.Content
+            };
+
+            if (message.ToolCalls is { Count: > 0 } calls)
+            {
+                var requested = new JsonArray();
+
+                foreach (var call in calls)
+                {
+                    requested.Add(new JsonObject
+                    {
+                        ["id"] = call.Id,
+                        ["type"] = "function",
+                        ["function"] = new JsonObject
+                        {
+                            ["name"] = call.Name,
+                            ["arguments"] = call.ArgumentsJson
+                        }
+                    });
+                }
+
+                node["tool_calls"] = requested;
+            }
+
+            if (message.ToolCallId is not null)
+            {
+                node["tool_call_id"] = message.ToolCallId;
+            }
+
+            array.Add(node);
+        }
+
+        return array;
+    }
+
+    /// <summary>
+    /// Posts a body and returns <c>choices[0].message</c>, or null when nothing usable came back.
+    /// </summary>
+    /// <remarks>
+    /// The single place the key is used, the only place failures are classified, and the only place
+    /// the response envelope is understood. Both public methods are then just "build a body".
+    /// </remarks>
+    private async Task<JsonNode?> SendAsync(
+        JsonObject body,
+        string apiKey,
+        CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
             Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
@@ -121,17 +290,11 @@ internal sealed class AiChatClient(
 
             try
             {
-                return JsonNode.Parse(text)?["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
+                return JsonNode.Parse(text)?["choices"]?[0]?["message"];
             }
             catch (JsonException)
             {
                 logger.LogWarning("The model provider's answer was not JSON.");
-                return null;
-            }
-            catch (InvalidOperationException)
-            {
-                // A `content` that is not a string — some providers return an array of parts.
-                logger.LogWarning("The model provider's answer had no readable content.");
                 return null;
             }
         }

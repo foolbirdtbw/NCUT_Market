@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using NCUT_Market.Core.Common;
 using NCUT_Market.Core.DTOs.Ai;
 using NCUT_Market.Core.DTOs.Products;
+using NCUT_Market.Core.Entities;
 using NCUT_Market.Core.Enums;
 using NCUT_Market.Core.Services;
 using NCUT_Market.Infrastructure.Persistence;
@@ -61,7 +62,81 @@ internal sealed class AgentAssistant(
     /// <summary>How many listings a search hands back. A bubble in a corner, not a results page.</summary>
     private const int MaxSearchResults = 5;
 
-    private static readonly JsonSerializerOptions IntentFormat = new(JsonSerializerDefaults.Web);
+    /// <summary>
+    /// How many words one search may try: the model's keyword plus its synonyms.
+    /// </summary>
+    /// <remarks>
+    /// A shopper's word is not a title's word — "喝茶用的" is a 保温杯 in the table and in no title at
+    /// all — and the model is the only part of this that knows what people here call things. Each
+    /// extra term is one more indexed query, so the list is capped; the loop stops at the first match.
+    /// </remarks>
+    private const int MaxSearchTerms = 5;
+
+    /// <summary>Every how many plain questions the profile is rewritten. A search always rewrites it.</summary>
+    private const int ProfileEveryN = 3;
+
+    /// <summary>How much of the model's note is kept. The panel never shows it; the prompt does.</summary>
+    private const int MaxProfileChars = 300;
+
+    /// <summary>At most this many search terms survive a rewrite.</summary>
+    private const int MaxProfileKeywords = 5;
+
+    /// <summary>
+    /// How many model turns one question may take before it is made to answer.
+    /// </summary>
+    /// <remarks>
+    /// A model that keeps searching is buying nothing: the listings do not change between its turns,
+    /// only its confusion does. Three is enough for "search, look, search a synonym, answer".
+    /// </remarks>
+    private const int MaxToolSteps = 3;
+
+    /// <summary>The one tool's name. Dispatch and the test fake both key on this string.</summary>
+    private const string SearchToolName = "search_products";
+
+    /// <summary>
+    /// How many stored exchanges the panel gets back. Enough to scroll through a session's worth,
+    /// short enough that opening the panel is not a full transcript read.
+    /// </summary>
+    private const int HistoryRows = 20;
+
+    /// <summary>
+    /// What the model may call. The description is the whole instruction it reads about the tool, so
+    /// the cases worth calling on live here rather than only in the prompt.
+    /// </summary>
+    private static readonly IReadOnlyList<AiToolDefinition> ToolDefinitions =
+    [
+        new AiToolDefinition(
+            SearchToolName,
+            "在站内公开的在售商品里查找。用户想买什么、或者追问「有没有」「还有吗」时调用；"
+            + "只查得到在售商品，查不到就不存在。",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "最具体的一个搜索关键词。用户说得笼统（「喝茶用的」）就替他挑最接近的具体东西，比如「茶具」。"
+                },
+                "also": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "2 到 4 个同义词或相近说法，query 查不到时依次再试，比如 茶杯、水杯、保温杯。"
+                },
+                "category": {
+                  "type": "string",
+                  "description": "站内分类名，只能从提示里给出的「站内分类」中原样挑一个；对不上就留空字符串。"
+                },
+                "maxPrice": {
+                  "type": "number",
+                  "description": "用户说出的最高价，单位元。「15 以下」就是 15，「预算 50」就是 50；用户没说价格就不要给。"
+                }
+              },
+              "required": ["query"]
+            }
+            """)
+    ];
+
+    private static readonly JsonSerializerOptions JsonFormat = new(JsonSerializerDefaults.Web);
 
     private static readonly Regex BlankRun = new(@"\n{3,}", RegexOptions.Compiled);
 
@@ -115,31 +190,77 @@ internal sealed class AgentAssistant(
                 $"今天和小北说话的 {_settings.DailyQuota} 次用完了，明天再来。");
         }
 
+        var profile = await dbContext.AiProfiles
+            .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken);
+
         var context = await BuildContextAsync(userId, request.Page, request.ProductId, cancellationToken);
-        var prompt = BuildPrompt(context, request.History, question);
 
-        // Call one: either an answer, or a search the server should run. JSON mode is what makes the
-        // second shape possible at all; a provider that ignores it still lands in the fallback below.
-        var first = await chatClient.CompleteAsync(
-            _settings.ApiKey, [], prompt, cancellationToken, jsonResponse: true);
-
-        if (first is null)
+        var messages = new List<AiChatMessage>
         {
-            logger.LogWarning("The agent's model call returned nothing usable.");
-            quota.Refund(userId);
+            AiChatMessage.System(BuildPrompt(
+                context,
+                await CategoryNamesAsync(cancellationToken),
+                string.IsNullOrWhiteSpace(profile?.Summary) ? null : profile.Summary,
+                request.History)),
+            AiChatMessage.User(question)
+        };
 
-            return Unavailable();
+        var results = new List<ProductSummaryResponse>();
+        var seen = new HashSet<long>();
+        var searched = false;
+        string? answer = null;
+
+        // The model decides whether to search. Each turn either answers or asks to run a tool; the
+        // tool's output goes back as one more message and the loop runs again — bounded, because a
+        // model that keeps searching would otherwise bill the deployment for its own confusion.
+        for (var step = 0; step < MaxToolSteps; step++)
+        {
+            var reply = await chatClient.ChatAsync(
+                _settings.ApiKey, messages, ToolDefinitions, cancellationToken);
+
+            if (reply is null)
+            {
+                logger.LogWarning("The agent's model call returned nothing usable.");
+                quota.Refund(userId);
+
+                return Unavailable();
+            }
+
+            if (!reply.HasToolCalls)
+            {
+                answer = CleanAnswer(reply.Content);
+                break;
+            }
+
+            messages.Add(new AiChatMessage("assistant", reply.Content) { ToolCalls = reply.ToolCalls });
+
+            foreach (var call in reply.ToolCalls)
+            {
+                searched |= call.Name == SearchToolName;
+
+                messages.Add(new AiChatMessage("tool", await RunToolAsync(call, results, seen, cancellationToken))
+                {
+                    ToolCallId = call.Id
+                });
+            }
         }
 
-        var intent = ParseIntent(first);
-
-        if (intent?.Search is { } rawSearch && !string.IsNullOrWhiteSpace(rawSearch))
+        if (answer is null)
         {
-            return await SearchAsync(userId, remaining, question, intent, rawSearch, cancellationToken);
-        }
+            // Out of steps, or the last turn was another tool call. One more turn with no tools on
+            // offer: the model has to say something, and the reader gets a sentence instead of a 503.
+            var final = await chatClient.ChatAsync(_settings.ApiKey, messages, tools: null, cancellationToken);
 
-        // A parsed intent with no answer is a broken reply, not a sentence: never show the raw JSON.
-        var answer = CleanAnswer(intent is null ? first : intent.Answer);
+            if (final is null)
+            {
+                logger.LogWarning("The agent's model call returned nothing usable.");
+                quota.Refund(userId);
+
+                return Unavailable();
+            }
+
+            answer = CleanAnswer(final.Content);
+        }
 
         if (answer is null)
         {
@@ -151,61 +272,391 @@ internal sealed class AgentAssistant(
             return Unavailable();
         }
 
-        return OperationResult<AgentAnswerResponse>.Success(
-            new AgentAnswerResponse(answer, remaining, []));
+        var shown = results
+            .Take(MaxSearchResults)
+            .Select(item => new AgentProductResult(item.Id, item.Title, item.Price))
+            .ToList();
+
+        var result = OperationResult<AgentAnswerResponse>.Success(
+            new AgentAnswerResponse(answer, remaining, shown));
+
+        // The transcript outlives the tab from here on. Tracked, not saved: the memory update below
+        // always calls SaveChanges, and one round trip per question is plenty.
+        dbContext.AiMessages.Add(new AiMessage
+        {
+            UserId = userId,
+            Question = question,
+            Answer = answer,
+            ResultsJson = shown.Count == 0 ? string.Empty : JsonSerializer.Serialize(shown, JsonFormat)
+        });
+
+        // After the answer is settled, so a profile call that fails cannot turn a good question into an
+        // error. A search is the clearest statement of what someone wants, so it counts as its own
+        // signal; plain questions are summarised every few turns.
+        await UpdateProfileAsync(userId, profile, request.History, question, searched, cancellationToken);
+
+        return result;
+    }
+
+    public async Task<IReadOnlyList<AgentMessageResponse>> GetHistoryAsync(
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        // Newest first to let the index and the LIMIT do their job, then flipped back into the order a
+        // conversation is read in.
+        var rows = await dbContext.AiMessages
+            .AsNoTracking()
+            .Where(message => message.UserId == userId)
+            .OrderByDescending(message => message.Id)
+            .Take(HistoryRows)
+            .ToListAsync(cancellationToken);
+
+        rows.Reverse();
+
+        return [.. rows.Select(row => new AgentMessageResponse(
+            row.Id,
+            row.Question,
+            row.Answer,
+            ParseResults(row.ResultsJson),
+            row.CreatedAt))];
     }
 
     /// <summary>
-    /// The one tool: run a real search over the public feed, then let the model summarise the rows.
+    /// Reads back the listings stored with an answer, or none when the column holds nothing usable.
+    /// </summary>
+    private static List<AgentProductResult> ParseResults(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<AgentProductResult>>(json, JsonFormat) ?? [];
+        }
+        catch (JsonException)
+        {
+            // Written by this service, so this is a corrupt row rather than a model's mistake; an
+            // answer without its list still reads, so the transcript is worth more than the strictness.
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Runs one tool call and turns its rows into the text the model reads next turn.
     /// </summary>
     /// <remarks>
-    /// The model never sees ids or links — it saw a keyword, it gets titles and prices, and the
-    /// clickable list is built from the query result. A search that finds nothing stops here: a second
-    /// call could only guess at reasons, and "没找到" is already the whole answer.
+    /// The model never sees ids or links — it asked with a keyword, it gets titles and prices, and the
+    /// clickable list under the bubble is built from the query result. A search that finds nothing says
+    /// so plainly: the model then has one true sentence to answer with, which is better than a second
+    /// call guessing at reasons.
     /// </remarks>
-    private async Task<OperationResult<AgentAnswerResponse>> SearchAsync(
-        long userId,
-        int remaining,
-        string question,
-        AgentIntent intent,
-        string rawSearch,
+    private async Task<string> RunToolAsync(
+        AiToolCall call,
+        List<ProductSummaryResponse> results,
+        HashSet<long> seen,
         CancellationToken cancellationToken)
     {
-        var term = Short(rawSearch.Trim(), 50);
-        var categoryId = await ResolveCategoryIdAsync(intent.Category, cancellationToken);
-
-        var matches = await productService.ListAsync(
-            new ProductListQuery { Q = term, CategoryId = categoryId },
-            new PaginationQuery(1, MaxSearchResults),
-            cancellationToken);
-
-        if (matches.Items.Count == 0)
+        if (call.Name != SearchToolName)
         {
-            return OperationResult<AgentAnswerResponse>.Success(
-                new AgentAnswerResponse(
-                    "没找到相关的商品，换个关键词或者分类再试试。",
-                    remaining,
-                    []));
+            return "没有这个工具。";
         }
 
-        var summary = CleanAnswer(await chatClient.CompleteAsync(
-            _settings.ApiKey, [],
-            BuildSearchPrompt(question, matches.Items),
-            cancellationToken, jsonResponse: false));
+        var args = ParseSearchArguments(call.ArgumentsJson);
+        var term = args.Query?.Trim();
 
-        if (summary is null)
+        if (string.IsNullOrWhiteSpace(term))
         {
-            logger.LogWarning("The agent's search summary returned nothing usable.");
-            quota.Refund(userId);
-
-            return Unavailable();
+            return "搜索缺少关键词。";
         }
 
-        return OperationResult<AgentAnswerResponse>.Success(
-            new AgentAnswerResponse(
-                summary,
-                remaining,
-                [.. matches.Items.Select(item => new AgentProductResult(item.Id, item.Title, item.Price))]));
+        var categoryId = await ResolveCategoryIdAsync(args.Category, cancellationToken);
+
+        // A ceiling of zero or less is the model misunderstanding the field, not a reader asking for
+        // free things; ignoring it degrades to the search without a price, which is still a search.
+        var maxPrice = args.MaxPrice > 0 ? args.MaxPrice : null;
+
+        var matches = await SearchProductsAsync(
+            SearchTerms(Short(term, 50), args.Also), categoryId, maxPrice, cancellationToken);
+
+        // The panel's list is the union of every search this question ran, in the order found.
+        foreach (var item in matches)
+        {
+            if (seen.Add(item.Id))
+            {
+                results.Add(item);
+            }
+        }
+
+        if (matches.Count == 0)
+        {
+            return "站内没有找到相关的在售商品。";
+        }
+
+        var output = new StringBuilder().AppendLine("找到这些在售商品：");
+
+        foreach (var item in matches)
+        {
+            output.AppendLine($"- {Short(item.Title, 40)}，{Money(item.Price)}，{item.CategoryName}");
+        }
+
+        return output.ToString();
+    }
+
+    /// <summary>
+    /// Reads one tool call's arguments, or an empty set when the model emitted something else.
+    /// </summary>
+    /// <remarks>
+    /// Off-schema arguments are an expected failure of a language model, not an exception worth a 500:
+    /// an unusable search is a search with no keyword, which <see cref="RunToolAsync"/> already answers.
+    /// </remarks>
+    private static AgentSearchArgs ParseSearchArguments(string argumentsJson)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<AgentSearchArgs>(argumentsJson, JsonFormat)
+                ?? new AgentSearchArgs();
+        }
+        catch (JsonException)
+        {
+            return new AgentSearchArgs();
+        }
+    }
+
+    /// <summary>
+    /// The rows a search hands back: the first word that matches anything, then a named category.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A keyword is a literal substring match, which is far too narrow for how people ask — "喝茶用的"
+    /// is a 保温杯 in the table and not a word in any title. So the model's one keyword is a list, and
+    /// they are tried in order until one matches; the model writes the synonyms because "what this
+    /// campus calls a kettle" is not something this code knows.
+    /// </para>
+    /// <para>
+    /// A named category is the floor under that, not filler around it: it is consulted only when none
+    /// of the words matched anything. 离散数学 is filed under 教材书籍 and never says "书", so a search
+    /// that only had the category to go on still finds it. A word that did match means the reader said
+    /// what they wanted; padding the list with the rest of the category would answer a question they
+    /// did not ask.
+    /// </para>
+    /// <para>
+    /// A price ceiling, when the reader stated one, applies to both halves. Without it "15 以下" would
+    /// come back with a ¥29 listing and the model could only apologise for it.
+    /// </para>
+    /// </remarks>
+    private async Task<List<ProductSummaryResponse>> SearchProductsAsync(
+        IReadOnlyList<string> terms,
+        long? categoryId,
+        decimal? maxPrice,
+        CancellationToken cancellationToken)
+    {
+        var page = new PaginationQuery(1, MaxSearchResults);
+        var found = new List<ProductSummaryResponse>();
+        var seen = new HashSet<long>();
+
+        void Collect(IReadOnlyList<ProductSummaryResponse> items)
+        {
+            foreach (var item in items)
+            {
+                if (seen.Add(item.Id))
+                {
+                    found.Add(item);
+                }
+            }
+        }
+
+        foreach (var term in terms)
+        {
+            Collect((await productService.ListAsync(
+                new ProductListQuery { Q = term, CategoryId = categoryId, MaxPrice = maxPrice },
+                page,
+                cancellationToken)).Items);
+
+            if (found.Count > 0)
+            {
+                break;
+            }
+        }
+
+        // Nothing matched on any word: show what the category holds rather than nothing.
+        if (categoryId is long id && found.Count == 0)
+        {
+            Collect((await productService.ListAsync(
+                new ProductListQuery { CategoryId = id, MaxPrice = maxPrice }, page, cancellationToken)).Items);
+        }
+
+        return [.. found.Take(MaxSearchResults)];
+    }
+
+    /// <summary>
+    /// The words to try, in order: the model's keyword, then its synonyms.
+    /// </summary>
+    /// <remarks>
+    /// Capped and de-duplicated because the browser is not the only thing writing here — the model is.
+    /// Five short terms is four more queries than before, all against an indexed LIKE on a table this
+    /// size, and it stops as soon as one of them matches.
+    /// </remarks>
+    private static List<string> SearchTerms(string rawSearch, List<string>? also)
+    {
+        IEnumerable<string?> raw = [rawSearch, .. also ?? []];
+
+        return raw
+            .Select(item => item?.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => Short(item!, 20))
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaxSearchTerms)
+            .ToList();
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Memory
+    // ----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Counts the question and, when it is time, rewrites what the assistant remembers about the reader.
+    /// </summary>
+    /// <remarks>
+    /// The model's note is the only thing kept — not the turns it was written from, and not a failure.
+    /// If the call comes back unusable the old note stays exactly as it was; the question that just
+    /// succeeded is never turned into an error by memory maintenance.
+    /// </remarks>
+    private async Task UpdateProfileAsync(
+        long userId,
+        AiProfile? profile,
+        IReadOnlyList<AgentTurn>? history,
+        string question,
+        bool searched,
+        CancellationToken cancellationToken)
+    {
+        if (profile is null)
+        {
+            // Written out on the first question even when nothing is summarised yet: QuestionCount is
+            // the only place "every third question" can be counted from, and an unpersisted counter
+            // restarts at one on every request.
+            profile = new AiProfile { UserId = userId };
+            dbContext.AiProfiles.Add(profile);
+        }
+
+        profile.QuestionCount++;
+
+        // A search is the strongest signal there is, so it rewrites the note at once. Plain questions
+        // wait for every third one, which is one model call per three turns instead of three.
+        if (!searched && profile.QuestionCount % ProfileEveryN != 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return;
+        }
+
+        var memo = ParseProfile(await chatClient.CompleteAsync(
+            _settings.ApiKey,
+            [],
+            BuildProfilePrompt(profile, await CategoryNamesAsync(cancellationToken), history, question),
+            cancellationToken,
+            jsonResponse: true));
+
+        if (memo is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(memo.Summary))
+            {
+                profile.Summary = Short(memo.Summary.Trim(), MaxProfileChars);
+            }
+
+            if (memo.Keywords is { Count: > 0 })
+            {
+                profile.Keywords = Short(
+                    string.Join(",", memo.Keywords
+                        .Where(keyword => !string.IsNullOrWhiteSpace(keyword))
+                        .Select(keyword => Short(keyword.Trim(), 20))
+                        .Take(MaxProfileKeywords)),
+                    200);
+            }
+
+            if (memo.Category is not null)
+            {
+                profile.CategoryName = Short(memo.Category.Trim(), 100);
+            }
+        }
+
+        // Null here means the call failed; the previous note stands and the count still moves on.
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string BuildProfilePrompt(
+        AiProfile profile,
+        IReadOnlyList<string> categories,
+        IReadOnlyList<AgentTurn>? history,
+        string question)
+    {
+        var prompt = new StringBuilder()
+            .AppendLine("你是「小北」，北方工业大学校园二手交易平台的小助手。")
+            .AppendLine("下面是一位用户在站内提过的话。请把它总结成给站内助手看的备忘：")
+            .AppendLine("这位用户想买什么、能接受什么价位。不要推测性别、学院、年级、联系方式或任何身份信息。")
+            .AppendLine("摘要不超过 80 字。分类名只能从下面的「站内分类」里原样挑一个，挑不出就留空字符串。");
+
+        if (categories.Count > 0)
+        {
+            prompt.AppendLine($"站内分类：{string.Join("、", categories)}");
+        }
+
+        prompt.AppendLine($"之前记下的备忘：{(string.IsNullOrWhiteSpace(profile.Summary) ? "无" : profile.Summary)}");
+
+        if (TrimHistory(history) is { Count: > 0 } turns)
+        {
+            prompt.AppendLine("最近的对话：");
+
+            foreach (var turn in turns)
+            {
+                prompt.AppendLine($"{(turn.Role == "user" ? "用户" : "小北")}：{turn.Content}");
+            }
+        }
+
+        prompt.AppendLine($"用户现在问：{question}");
+        prompt.AppendLine("只输出一个 JSON 对象：");
+        prompt.AppendLine("{\"summary\":\"…\",\"keywords\":[\"最多 5 个站内搜索词\"],\"category\":\"分类名或空字符串\"}");
+
+        return prompt.ToString();
+    }
+
+    /// <summary>
+    /// What the hints panel can say on its own: one live listing matching what this reader keeps asking
+    /// about. Null when there is no note, or when nothing matching is still for sale.
+    /// </summary>
+    private async Task<AgentHint?> RecommendationAsync(long userId, CancellationToken cancellationToken)
+    {
+        var profile = await dbContext.AiProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken);
+
+        if (profile is null)
+        {
+            return null;
+        }
+
+        // The category first — it is the widest thing she remembers — then the search words. Either
+        // half alone can match nothing: a category name is never a substring of a title, and a keyword
+        // can be a word nobody here uses.
+        var terms = SearchTerms(
+            profile.CategoryName,
+            [.. profile.Keywords.Split(',', StringSplitOptions.RemoveEmptyEntries)]);
+
+        if (terms.Count == 0)
+        {
+            return null;
+        }
+
+        var categoryId = await ResolveCategoryIdAsync(profile.CategoryName, cancellationToken);
+        var hit = (await SearchProductsAsync(terms, categoryId, null, cancellationToken)).FirstOrDefault();
+
+        return hit is null
+            ? null
+            : new AgentHint(
+                "recommend",
+                $"你之前找过{Short(terms[0], 12)}，这件还在卖：{Short(hit.Title, 20)}，{Money(hit.Price)}",
+                $"#/products/{hit.Id}");
     }
 
     /// <summary>
@@ -241,7 +692,7 @@ internal sealed class AgentAssistant(
             PageSlugs.Messages => await MessagesAsync(id, cancellationToken),
             PageSlugs.Notifications => await NotificationsAsync(id, cancellationToken),
             PageSlugs.Feedback => new AgentContext(slug, Feedback(), null),
-            _ => new AgentContext(slug, General(), null)
+            _ => new AgentContext(slug, General(signedIn: true), null)
         };
     }
 
@@ -268,6 +719,14 @@ internal sealed class AgentAssistant(
                 "unread-messages", $"有 {unread} 个私信会话在等你回复。", "#/messages"));
         }
 
+        // Remembered from earlier questions. Added unconditionally rather than only in the empty case:
+        // "nothing to do today" and "here is something you wanted" are both worth saying, and the
+        // browse fallback below only fires when this produced nothing either.
+        if (await RecommendationAsync(userId, cancellationToken) is { } recommendation)
+        {
+            hints.Add(recommendation);
+        }
+
         if (hints.Count == 0)
         {
             hints.Add(new AgentHint("browse", "今天没有待处理的事，去逛逛商品吧。", "#/products"));
@@ -291,6 +750,11 @@ internal sealed class AgentAssistant(
 
         hints.Add(new AgentHint(
             "search-tip", "按分类筛选比只输关键词更快找到想要的东西。", null));
+
+        if (await RecommendationAsync(userId, cancellationToken) is { } recommendation)
+        {
+            hints.Add(recommendation);
+        }
 
         return new AgentContext(PageSlugs.Products, hints, null);
     }
@@ -585,11 +1049,25 @@ internal sealed class AgentAssistant(
         new AgentHint("feedback-anonymous", "勾了匿名，昵称就不会出现在反馈板上。", null)
     };
 
-    private static IReadOnlyList<AgentHint> General() => new[]
-    {
-        new AgentHint("welcome", "我是小北，站里的事尽量问我。", null),
-        new AgentHint("sign-in", "登录之后我能看到你自己的草稿和未读消息。", "#/login")
-    };
+    /// <summary>
+    /// Any page that has nothing page-specific to say — announcements, sign-in, a URL nobody
+    /// recognises.
+    /// </summary>
+    /// <remarks>
+    /// The sign-in line is only for people who are not signed in. Putting it in the signed-in branch
+    /// too would have her telling a logged-in reader to log in.
+    /// </remarks>
+    private static IReadOnlyList<AgentHint> General(bool signedIn = false) => signedIn
+        ? new[]
+        {
+            new AgentHint("welcome", "我是小北，站里的事尽量问我。", null),
+            new AgentHint("find", "想找什么直接说，比如「帮我找找自行车」，我去在售商品里翻。", "#/products")
+        }
+        : new[]
+        {
+            new AgentHint("welcome", "我是小北，站里的事尽量问我。", null),
+            new AgentHint("sign-in", "登录之后我能看到你自己的草稿和未读消息。", "#/login")
+        };
 
     private static IReadOnlyList<AgentHint> ProductFallback() => new[]
     {
@@ -603,22 +1081,40 @@ internal sealed class AgentAssistant(
 
     private static string BuildPrompt(
         AgentContext context,
-        IReadOnlyList<AgentTurn>? history,
-        string question)
+        IReadOnlyList<string> categories,
+        string? profileSummary,
+        IReadOnlyList<AgentTurn>? history)
     {
         var prompt = new StringBuilder();
 
         prompt.AppendLine("你是「小北」，北方工业大学校园二手交易平台的小助手。");
         prompt.AppendLine("用简体中文回答，口语、简短，最多 3 句话、120 字以内。");
         prompt.AppendLine("不要用 markdown、列表、代码块或链接，也不要自称 AI。");
-        prompt.AppendLine("只能依据下面「页面信息」回答；里面没有的事实，尤其是价格、库存和别人的联系方式，");
+        prompt.AppendLine("只能依据下面「页面信息」和工具的返回回答；里面没有的事实，尤其是价格、库存和别人的联系方式，");
         prompt.AppendLine("就直说不知道，不要编造数字。");
-        prompt.AppendLine("如果用户是在让你找站内商品（例如「帮我找找自行车」「有没有便宜的台灯」），");
-        prompt.AppendLine("不要自己编答案，改成一个 JSON 对象：{\"search\":\"关键词\",\"category\":\"分类名或空字符串\"}。");
-        prompt.AppendLine("搜索词尽量短；分类名用站里常见的说法，拿不准就留空。");
-        prompt.AppendLine("其他问题照常回答，但整个回复也要是一个 JSON 对象：{\"answer\":\"你的回答\"}。");
-        prompt.AppendLine("不要编造商品、价格、链接或编号；搜索结果由系统另外附上。");
+        prompt.AppendLine("如果用户是在找站内商品（例如「帮我找找自行车」「有没有便宜的台灯」「我想买点喝茶用的」），");
+        prompt.AppendLine("或者上一轮刚找过、这一句在追问「有没有」「还有吗」「都没有吗」，");
+        prompt.AppendLine("调用 search_products 去在售商品里查，不要自己编答案。");
+        prompt.AppendLine("query 挑最具体的一种说法；用户说得笼统（「喝茶用的」）就替他挑最接近的具体东西，");
+        prompt.AppendLine("再把 2 到 4 个同义词或相近说法放进 also（例如 query 茶具，also 茶杯、水杯、保温杯）。");
+        prompt.AppendLine("分类名只能从下面的「站内分类」里原样挑一个，对不上就留空字符串。");
+        prompt.AppendLine("用户说了价格上限（「15 以下」「预算 50」）就放进 maxPrice；没说就别传，不要自己编一个数。");
+        prompt.AppendLine("查到的商品列表会由系统附在你回复的下方，不要逐条复述标题，也不要编造商品、价格或链接。");
+        prompt.AppendLine("其他问题直接回答，不用调用工具。");
+
+        if (categories.Count > 0)
+        {
+            prompt.AppendLine();
+            prompt.AppendLine($"站内分类：{string.Join("、", categories)}");
+        }
+
         prompt.AppendLine();
+
+        if (!string.IsNullOrWhiteSpace(profileSummary))
+        {
+            prompt.AppendLine($"你对这位用户的印象：{profileSummary}");
+        }
+
         prompt.AppendLine($"当前页面：{PageName(context.Page)}");
         prompt.AppendLine("页面信息：");
 
@@ -641,37 +1137,6 @@ internal sealed class AgentAssistant(
             {
                 prompt.AppendLine($"{(turn.Role == "user" ? "用户" : "小北")}：{turn.Content}");
             }
-        }
-
-        prompt.AppendLine();
-        prompt.AppendLine($"用户现在问：{question}");
-
-        return prompt.ToString();
-    }
-
-    /// <summary>
-    /// The second call, after a search found rows: one short sentence over real data.
-    /// </summary>
-    /// <remarks>
-    /// Titles are shortened and ids are withheld — the list under the bubble is the server's, so the
-    /// model has nothing to invent a link from, and nothing to gain by reciting every row.
-    /// </remarks>
-    private static string BuildSearchPrompt(
-        string question,
-        IReadOnlyList<ProductSummaryResponse> items)
-    {
-        var prompt = new StringBuilder()
-            .AppendLine("你是「小北」，北方工业大学校园二手交易平台的小助手。")
-            .AppendLine("下面是从本站查到的真实在售商品。用 1 到 3 句口语中文说找到了什么、大概什么价位。")
-            .AppendLine("不要用 markdown、列表、代码块或链接；不要编造商品、价格或编号；")
-            .AppendLine("完整列表会由系统附在消息下方，不要逐条复述标题。")
-            .AppendLine()
-            .AppendLine($"用户想找：{question}")
-            .AppendLine("查到的商品：");
-
-        foreach (var item in items)
-        {
-            prompt.AppendLine($"- {Short(item.Title, 40)}，{Money(item.Price)}，{item.CategoryName}");
         }
 
         return prompt.ToString();
@@ -741,15 +1206,19 @@ internal sealed class AgentAssistant(
     }
 
     /// <summary>
-    /// Reads call one's reply as either a search request or an answer.
+    /// Reads the profile call's reply, or null when there is nothing usable in it.
     /// </summary>
     /// <remarks>
-    /// Returns null when there is no object in the text at all, which is also how a provider that
-    /// ignores <c>response_format</c> is handled: its plain sentence is then the answer, exactly as
-    /// before this feature existed.
+    /// First brace to last. A provider that ignores JSON mode and answers in prose lands here as null,
+    /// which leaves the old note untouched.
     /// </remarks>
-    private static AgentIntent? ParseIntent(string text)
+    private static AgentProfileMemo? ParseProfile(string? text)
     {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
         var start = text.IndexOf('{');
         var end = text.LastIndexOf('}');
 
@@ -760,13 +1229,29 @@ internal sealed class AgentAssistant(
 
         try
         {
-            return JsonSerializer.Deserialize<AgentIntent>(text[start..(end + 1)], IntentFormat);
+            return JsonSerializer.Deserialize<AgentProfileMemo>(text[start..(end + 1)], JsonFormat);
         }
         catch (JsonException)
         {
             return null;
         }
     }
+
+    /// <summary>
+    /// The category names the model is allowed to name, in the order the site shows them.
+    /// </summary>
+    /// <remarks>
+    /// One small query per question. Without this the model has to guess what the site calls things,
+    /// and "书" comes back as a word no category is called, so the search stays keyword-only.
+    /// </remarks>
+    private async Task<List<string>> CategoryNamesAsync(CancellationToken cancellationToken) =>
+        await dbContext.Categories
+            .AsNoTracking()
+            .Where(category => category.Status == CategoryStatus.Active)
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(category => category.Id)
+            .Select(category => category.Name)
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Turns the category name the model guessed into a real id, or null when it guessed wrong.
@@ -879,13 +1364,29 @@ internal sealed class AgentAssistant(
         IReadOnlyList<AgentHint> Hints,
         string? ProductLine);
 
-    /// <summary>What call one may return: a search request, or the answer itself.</summary>
-    private sealed record AgentIntent
+    /// <summary>The arguments <c>search_products</c> takes, as far as this server cares about them.</summary>
+    private sealed record AgentSearchArgs
     {
-        public string? Search { get; init; }
+        /// <summary>The one word to try first.</summary>
+        public string? Query { get; init; }
 
+        /// <summary>Other words to try when the keyword itself matches nothing.</summary>
+        public List<string>? Also { get; init; }
+
+        /// <summary>A category name exactly as the prompt listed it, or blank.</summary>
         public string? Category { get; init; }
 
-        public string? Answer { get; init; }
+        /// <summary>The highest price the reader named, in yuan, or null when they named none.</summary>
+        public decimal? MaxPrice { get; init; }
+    }
+
+    /// <summary>What the profile call may return.</summary>
+    private sealed record AgentProfileMemo
+    {
+        public string? Summary { get; init; }
+
+        public List<string>? Keywords { get; init; }
+
+        public string? Category { get; init; }
     }
 }

@@ -234,6 +234,18 @@ internal sealed class AuthService(
 
         await OfflinePublishedAsync(user.Id, cancellationToken);
 
+        // What the assistant wrote down about this person, and every question it answered for them,
+        // goes with the account. Both are deleted rather than anonymised: the whole point of closing
+        // an account is that nothing is left to remember them by, and there is no history anyone else
+        // needs.
+        await dbContext.AiProfiles
+            .Where(profile => profile.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await dbContext.AiMessages
+            .Where(message => message.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return OperationResult<bool>.Success(true);

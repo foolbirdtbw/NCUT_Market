@@ -373,6 +373,10 @@ DELETE FROM products WHERE seller_id IN (SELECT id FROM users WHERE username LIK
 -- 必须摆在 users 前面。
 DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'demo\_%');
 
+-- 小北的画像和聊天记录同理：外键是 Restrict，注销账号时由服务自己删，这里是演示数据整体重来。
+DELETE FROM ai_profiles WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'demo\_%');
+DELETE FROM ai_messages WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'demo\_%');
+
 DELETE FROM users WHERE username LIKE 'demo\_%';
 '@
 

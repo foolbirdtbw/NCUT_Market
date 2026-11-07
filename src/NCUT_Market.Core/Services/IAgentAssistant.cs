@@ -54,4 +54,17 @@ public interface IAgentAssistant
         long userId,
         AgentAskRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The conversations already had, oldest first, so the panel can show them again.
+    /// </summary>
+    /// <param name="userId">Whose transcript. Never another account's, whichever token is presented.</param>
+    /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
+    /// <returns>
+    /// The newest few exchanges, oldest first. Does not fail: an account that never asked anything has
+    /// an empty transcript, which is an answer and not an error.
+    /// </returns>
+    Task<IReadOnlyList<AgentMessageResponse>> GetHistoryAsync(
+        long userId,
+        CancellationToken cancellationToken = default);
 }

@@ -38,9 +38,9 @@ public sealed record AgentTurn(string? Role, string? Content);
 /// </param>
 /// <param name="ProductId">The listing being looked at, when the page is a product page.</param>
 /// <param name="History">
-/// Earlier turns, oldest first. Held only by the browser: nothing here is stored server-side, so the
-/// server re-derives the context from <paramref name="Page"/> and <paramref name="ProductId"/> every
-/// time and uses this only to follow the thread of the conversation.
+/// Earlier turns, oldest first, as this browser remembers them. The server keeps its own copy of every
+/// answered exchange, but this is what it reads for context — so a client that sends nothing still
+/// gets a correct answer, it just gets it without the thread of the conversation.
 /// </param>
 public sealed record AgentAskRequest(
     string? Message,
@@ -65,3 +65,18 @@ public sealed record AgentAnswerResponse(
     string Answer,
     int? RemainingToday,
     IReadOnlyList<AgentProductResult> Results);
+
+/// <summary>
+/// One exchange from an earlier conversation, as the panel shows it again after a refresh.
+/// </summary>
+/// <param name="Id">Row id. Newest rows sort last in the list, which is the order the panel replies in.</param>
+/// <param name="Question">What the reader asked.</param>
+/// <param name="Answer">What she answered, already cleaned and capped.</param>
+/// <param name="Results">The listings that were shown under the answer, empty when none were.</param>
+/// <param name="CreatedAt">When it was answered, Beijing time without an offset.</param>
+public sealed record AgentMessageResponse(
+    long Id,
+    string Question,
+    string Answer,
+    IReadOnlyList<AgentProductResult> Results,
+    DateTime CreatedAt);
